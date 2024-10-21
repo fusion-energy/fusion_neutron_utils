@@ -78,12 +78,12 @@ fn reactivity(
     }
 
     let reaction = reaction.unwrap_or("D+T=n+a");
-    let equation = equation.unwrap_or("Bosch-Hale");
+    let equation_str = equation.unwrap_or("Bosch-Hale");
 
     let ion_temperature_kev: f64 = scale_temperature_units_to_kev(ion_temperature, temperature_units);
 
-    let sigma_thermal_reactivity_scaled = if equation == "Bosch-Hale"{
-        let (C1, C2, C3, C4, C5, C6, C7, GAMOV, MRC2) = if reaction == "D+T=n+a" {
+    let sigma_thermal_reactivity_scaled = if equation_str == "Bosch-Hale"{
+        let (c1, c2, c3, c4, c5, c6, c7, gamov, mrc2) = if reaction == "D+T=n+a" {
             (
                 1.17302e-9, 1.51361e-2, 7.51886e-2, 4.60643e-3, 1.35000e-2, -1.06750e-4, 1.36600e-5,
                 34.3827, 1_124_656.0,
@@ -102,10 +102,10 @@ fn reactivity(
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Only 'D+T=n+a', 'D+D=p+T', and 'D+D=n+He3' reactions are supported"));
         };
 
-        let sigma_thermal_reactivity =  bosch_and_hale_equations(C1, C2, C3, C4, C5, C6, C7, GAMOV, MRC2, ion_temperature_kev)?;
+        let sigma_thermal_reactivity =  bosch_and_hale_equations(c1, c2, c3, c4, c5, c6, c7, gamov, mrc2, ion_temperature_kev)?;
         let scaling_factor = scale_reactivity_units(sigma_thermal_reactivity, reactivity_units);
         Ok(sigma_thermal_reactivity*scaling_factor)
-    }else if equation == "Sadler-Van Belle"{
+    }else if equation_str == "Sadler-Van Belle"{
         if reaction != "D+T=n+a" {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Only 'D+T=n+a' reaction is supported for 'Sadler-Van Belle' equation"));
         }
@@ -162,11 +162,11 @@ fn relative_reaction_rates(
     let dt_fraction = dt_fraction.unwrap_or(0.5);
     let dd_fraction = dd_fraction.unwrap_or(0.5);
 
-    let equation = equation.unwrap_or("Bosch-Hale");
+    let equation_str = equation.unwrap_or("Bosch-Hale");
     
     let total_fraction = dt_fraction + dd_fraction;
     let tol : f64 = 0.000001;
-    if !(total_fraction > 1. - 0.000001 && total_fraction < 1. + 0.000001) {
+    if !(total_fraction > 1. - tol && total_fraction < 1. + tol) {
         return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("The dt_fraction + dd_fraction do not sum to 1.0 and are not within a small tolerance (+/-0.000001)"));
     }
 
@@ -175,7 +175,8 @@ fn relative_reaction_rates(
         Some("keV"),
         Some("m^3/s"),
         Some("D+T=n+a"),
-        Some("Bosch-Hale")
+        Some(equation_str)
+        // Some("Bosch-Hale")
     )?;
 
     let dd_reactivity_1 = reactivity(
@@ -183,7 +184,8 @@ fn relative_reaction_rates(
         Some("keV"),
         Some("m^3/s"),
         Some("D+D=n+He3"),
-        Some("Bosch-Hale")
+        Some(equation_str)
+        // Some("Bosch-Hale")
     )?;
 
     let dd_reactivity_2 = reactivity(
@@ -191,7 +193,8 @@ fn relative_reaction_rates(
         Some("keV"),
         Some("m^3/s"),
         Some("D+D=p+T"),
-        Some("Bosch-Hale")
+        Some(equation_str)
+        // Some("Bosch-Hale")
     )?;
 
     let total_reactivity = dt_reactivity * dt_fraction + dd_reactivity_1 * dd_fraction + dd_reactivity_2 * dd_fraction;
@@ -225,15 +228,15 @@ fn sadler_van_belle(ion_temperature: f64) -> Result<f64, PyErr> {
     Ok(val)
 }
 
-fn bosch_and_hale_equations(C1: f64, C2: f64, C3: f64, C4: f64, C5: f64, C6: f64, C7: f64, GAMOV: f64, MRC2: f64, ion_temperature_kev: f64) -> Result<f64, PyErr> {
+fn bosch_and_hale_equations(c1: f64, c2: f64, c3: f64, c4: f64, c5: f64, c6: f64, c7: f64, gamov: f64, mrc2: f64, ion_temperature_kev: f64) -> Result<f64, PyErr> {
     // Equation 13
-    let theta: f64 = ion_temperature_kev * (1.0 - (ion_temperature_kev * (C2 + ion_temperature_kev * (C4 + ion_temperature_kev * C6))) / (1.0 + ion_temperature_kev * (C3 + ion_temperature_kev * (C5 + ion_temperature_kev * C7)))) .powi(-1);
+    let theta: f64 = ion_temperature_kev * (1.0 - (ion_temperature_kev * (c2 + ion_temperature_kev * (c4 + ion_temperature_kev * c6))) / (1.0 + ion_temperature_kev * (c3 + ion_temperature_kev * (c5 + ion_temperature_kev * c7)))) .powi(-1);
 
     // Equation 14
-    let xi: f64 = (GAMOV.powi(2) / (4.0 * theta)).powf(1.0 / 3.0);
+    let xi: f64 = (gamov.powi(2) / (4.0 * theta)).powf(1.0 / 3.0);
 
     // Equation 12
-    let sigma_thermal_reactivity: f64 = C1 * theta * (xi / (MRC2 * ion_temperature_kev.powi(3))).sqrt() * (-3.0 * xi).exp();
+    let sigma_thermal_reactivity: f64 = c1 * theta * (xi / (mrc2 * ion_temperature_kev.powi(3))).sqrt() * (-3.0 * xi).exp();
 
     Ok(sigma_thermal_reactivity * 1.0e-6)
 }
