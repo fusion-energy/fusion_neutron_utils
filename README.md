@@ -1,3 +1,5 @@
+[![CI testing](https://github.com/fusion-energy/fusion_neutron_utils/actions/workflows/ci.yml/badge.svg)](https://github.com/fusion-energy/fusion_neutron_utils/actions/workflows/ci.yml)
+
 A package for calculating neutron properties from DT and DD fusion reactions.
 
 This package accurately calculates the neutron energies and distributions by accounting for the plasma temperature.

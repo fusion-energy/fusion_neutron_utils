@@ -15,4 +15,4 @@ dynamic = ["version"]
 features = ["pyo3/extension-module"]
 
 [project.optional-dependencies]
-test = ["pytest", "scipy==1.13.1", "NeSST"]
+tests = ["pytest", "scipy==1.13.1", "NeSST"]
