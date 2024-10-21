@@ -1,4 +1,4 @@
-[![CI testing](https://github.com/fusion-energy/fusion_neutron_utils/actions/workflows/ci.yml/badge.svg)](https://github.com/fusion-energy/fusion_neutron_utils/actions/workflows/ci.yml)
+[![CI Python testing](https://github.com/fusion-energy/fusion_neutron_utils/actions/workflows/ci-python.yml/badge.svg)](https://github.com/fusion-energy/fusion_neutron_utils/actions/workflows/ci-python.yml) [![CI Rust testing](https://github.com/fusion-energy/fusion_neutron_utils/actions/workflows/ci-rust.yml/badge.svg)](https://github.com/fusion-energy/fusion_neutron_utils/actions/workflows/ci-rust.yml)
 
 A package for calculating neutron properties from DT and DD fusion reactions.
 
