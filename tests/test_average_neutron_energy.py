@@ -22,10 +22,10 @@ def test_mean_energy_with_nesst():
         temperature_units='eV',
         neutron_energy_units='eV'
     )
-    # assert nesst_dt_mean == fnu_dt_mean
-    assert nesst_dd_mean == fnu_dd_mean
-    assert nest_dt_std_dev == fnu_dt_std_dev
-    assert nest_dd_std_dev == fnu_dd_std_dev
+    assert nesst_dt_mean == approx(fnu_dt_mean, rel=1e-6)
+    assert nesst_dd_mean == approx(fnu_dd_mean, rel=1e-6)
+    assert nest_dt_std_dev == approx(fnu_dt_std_dev, rel=1e-6)
+    assert nest_dd_std_dev == approx(fnu_dd_std_dev, rel=1e-6)
 
 def test_mean_energy():
     mean, std_dev = neutron_energy_mean_and_std_dev(
