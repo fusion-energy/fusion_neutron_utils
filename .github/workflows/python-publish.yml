@@ -3,7 +3,7 @@
 #
 #    maturin generate-ci github -o .github/workflows/python-publish.yml --pytest --platform manylinux windows
 #
-name: PyPI Publish
+name: CI
 
 on:
   push:
@@ -60,7 +60,8 @@ jobs:
           set -e
           python3 -m venv .venv
           source .venv/bin/activate
-          pip install .[tests] --find-links dist --force-reinstall
+          pip install fusion_neutron_utils nesst --find-links dist --force-reinstall
+          pip install pytest
           pytest
       - name: pytest
         if: ${{ !startsWith(matrix.platform.target, 'x86') && matrix.platform.target != 'ppc64' }}
@@ -72,10 +73,10 @@ jobs:
           install: |
             apt-get update
             apt-get install -y --no-install-recommends python3 python3-pip
-            pip3 install -U pip pytest nesst
+            pip3 install -U pip pytest
           run: |
             set -e
-            pip3 install .[tests] --find-links dist --force-reinstall
+            pip3 install fusion_neutron_utils nesst --find-links dist --force-reinstall
             pytest
 
   windows:
@@ -111,8 +112,8 @@ jobs:
           set -e
           python3 -m venv .venv
           source .venv/Scripts/activate
-          pip install .[tests] --find-links dist --force-reinstall
-          pip install pytest nesst
+          pip install fusion_neutron_utils nesst --find-links dist --force-reinstall
+          pip install pytest
           pytest
 
   sdist:
