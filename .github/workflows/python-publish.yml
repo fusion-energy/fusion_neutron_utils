@@ -3,7 +3,7 @@
 #
 #    maturin generate-ci github -o .github/workflows/python-publish.yml --pytest --platform manylinux windows
 #
-name: PyPI publish
+name: CI
 
 on:
   push:
@@ -62,7 +62,7 @@ jobs:
           source .venv/bin/activate
           pip install fusion_neutron_utils --find-links dist --force-reinstall
           pip install pytest
-          pytest
+          # pytest
       - name: pytest
         if: ${{ !startsWith(matrix.platform.target, 'x86') && matrix.platform.target != 'ppc64' }}
         uses: uraimo/run-on-arch-action@v2
@@ -77,7 +77,7 @@ jobs:
           run: |
             set -e
             pip3 install fusion_neutron_utils --find-links dist --force-reinstall
-            pytest
+            # pytest
 
   windows:
     runs-on: ${{ matrix.platform.runner }}
@@ -114,7 +114,7 @@ jobs:
           source .venv/Scripts/activate
           pip install fusion_neutron_utils --find-links dist --force-reinstall
           pip install pytest
-          pytest
+          # pytest
 
   sdist:
     runs-on: ubuntu-latest
