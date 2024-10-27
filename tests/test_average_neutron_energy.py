@@ -1,5 +1,31 @@
+import NeSST as nst
 from fusion_neutron_utils import neutron_energy_mean_and_std_dev
 from pytest import approx
+
+def test_mean_energy_with_nesst():
+
+    ion_temperature = 19e3
+
+    nesst_dt_mean, nest_dt_std_dev, nest_dt_var = nst.DTprimspecmoments(ion_temperature)
+    nesst_dd_mean, nest_dd_std_dev, nest_dd_var = nst.DDprimspecmoments(ion_temperature)
+
+    fnu_dd_mean, fnu_dd_std_dev = neutron_energy_mean_and_std_dev(
+        reaction='D+D=n+He3',
+        ion_temperature=ion_temperature,
+        temperature_units='eV',
+        neutron_energy_units='eV'
+    )
+
+    fnu_dt_mean, fnu_dt_std_dev = neutron_energy_mean_and_std_dev(
+        reaction='D+T=n+a',
+        ion_temperature=ion_temperature,
+        temperature_units='eV',
+        neutron_energy_units='eV'
+    )
+    assert nesst_dt_mean == approx(fnu_dt_mean, rel=1e-6)
+    assert nesst_dd_mean == approx(fnu_dd_mean, rel=1e-6)
+    assert nest_dt_std_dev == approx(fnu_dt_std_dev, rel=1e-6)
+    assert nest_dd_std_dev == approx(fnu_dd_std_dev, rel=1e-6)
 
 def test_mean_energy():
     mean, std_dev = neutron_energy_mean_and_std_dev(
