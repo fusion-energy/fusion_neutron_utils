@@ -5,7 +5,7 @@ A package for calculating neutron properties from DT and DD fusion reactions.
 This package accurately calculates the neutron energies and distributions by accounting for the plasma temperature.
 
 - mean neutron energy
-- neutron energy standard deviation ()
+- neutron energy standard deviation
 - thermal reactivity 
 
 A Python :snake: package with a Rust :crab: backend.
