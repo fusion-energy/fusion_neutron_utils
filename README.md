@@ -34,7 +34,7 @@ neutron_energy_mean_and_std_dev(
     temperature_units='eV',
     neutron_energy_units='eV'
 )
->>>>(14021063.802198425, 413861.375751198)
+>>>>(14092196.942384735, 413861.375751198)
 ```
 
 
