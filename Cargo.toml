@@ -9,4 +9,4 @@ name = "fusion_neutron_utils"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = "0.22.2"
+pyo3 = "0.22.5"
