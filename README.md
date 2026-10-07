@@ -78,3 +78,56 @@ neutron_energy_spectrum(
 )
 >>>[0.12770950136868156, 0.13181225603982472, 0.12147036033626678]
 ```
+
+## Neutron source normalisation
+
+OpenMC tally results are per source neutron, so they need multiplying by the neutron emission rate. For a fusion power in W, the neutrons per second include all four reactions (D+T, both D+D branches and T+T) for the given ion temperature and fuel composition:
+
+```python
+from fusion_neutron_utils import neutron_rate_from_fusion_power
+neutron_rate_from_fusion_power(
+    fusion_power=500e6,
+    ion_temperature=10,
+    temperature_units='keV',
+    deuterium_fraction=0.5,
+    tritium_fraction=0.5,
+)
+>>>1.781276864853604e+20
+```
+
+The share of neutrons from each reaction (DT, DD (n+He3), DD (p+T) and TT) can be used as the relative ```Source.strength``` of each reaction in OpenMC. Unlike `relative_reaction_rates` this counts neutrons, so D+D=p+T gives none and each T+T reaction gives two.
+
+```python
+from fusion_neutron_utils import relative_neutron_rates
+relative_neutron_rates(
+    ion_temperature=10,
+    temperature_units='keV',
+    deuterium_fraction=0.5,
+    tritium_fraction=0.5,
+)
+>>>[0.9938422010961021, 0.0026341092281159653, 0.0, 0.003523689675781927]
+```
+
+The mean energy of all emitted neutrons:
+
+```python
+from fusion_neutron_utils import mean_neutron_energy
+mean_neutron_energy(
+    ion_temperature=10,
+    temperature_units='keV',
+    neutron_energy_units='MeV',
+    deuterium_fraction=0.5,
+    tritium_fraction=0.5,
+)
+>>>13.999459130682638
+```
+
+The energy released per reaction (from the AME2020 atomic masses) and the neutrons per reaction are also available:
+
+```python
+from fusion_neutron_utils import fusion_energy_per_reaction, neutrons_per_reaction
+fusion_energy_per_reaction('D+T=n+a', energy_units='MeV')
+>>>17.589299865
+neutrons_per_reaction('T+T=2n+a')
+>>>2
+```

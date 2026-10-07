@@ -175,9 +175,18 @@ fn relative_reaction_rates(
     tritium_fraction: Option<f64>,
     equation: Option<&str>,
 ) -> Result<Vec<f64>, PyErr> {
-
     let ion_temperature_kev: f64 = scale_temperature_units_to_kev(ion_temperature, temperature_units)?;
+    Ok(reaction_fractions(ion_temperature_kev, deuterium_fraction, tritium_fraction, equation)?.to_vec())
+}
 
+/// Fractions of all reactions that are DT, DD (n+He3), DD (p+T) and TT, in the
+/// order of REACTIONS.
+fn reaction_fractions(
+    ion_temperature_kev: f64,
+    deuterium_fraction: Option<f64>,
+    tritium_fraction: Option<f64>,
+    equation: Option<&str>,
+) -> PyResult<[f64; 4]> {
     let deuterium_fraction = deuterium_fraction.unwrap_or(0.5);
     let tritium_fraction = tritium_fraction.unwrap_or(0.5);
 
@@ -204,8 +213,7 @@ fn relative_reaction_rates(
 
     let total_rate = dt_rate + dd_rate_1 + dd_rate_2 + tt_rate;
 
-    Ok(vec![dt_rate / total_rate, dd_rate_1 / total_rate, dd_rate_2 / total_rate, tt_rate / total_rate])
-
+    Ok([dt_rate / total_rate, dd_rate_1 / total_rate, dd_rate_2 / total_rate, tt_rate / total_rate])
 }
 
 
@@ -311,7 +319,12 @@ fn neutron_energy_spectrum(
     if energies.iter().any(|&e| !(e >= 0.0)) {
         return Err(value_error("Neutron energies must be non-negative"));
     }
+    let energies_ev: Vec<f64> = energies.iter().map(|e| e * unit_in_ev).collect();
+    Ok(tt_spectrum_per_ev(&energies_ev, ion_temperature_ev).iter().map(|s| s * unit_in_ev).collect())
+}
 
+/// TT neutron spectrum dN/dE in 1/eV at energies in eV, normalised to 1.
+fn tt_spectrum_per_ev(energies_ev: &[f64], ion_temperature_ev: f64) -> Vec<f64> {
     // The tabulated centre of mass spectrum is linearly interpolated onto a
     // finer grid, as the 37 keV data spacing is too coarse for the narrow
     // broadening kernel at low ion temperatures. Integrals use the trapezium
@@ -336,18 +349,235 @@ fn neutron_energy_spectrum(
     let a = 2.0 * TRITON_NEUTRON_MASS_RATIO / ion_temperature_ev;
     let norm = 0.5 * (a / std::f64::consts::PI).sqrt() / integral;
 
-    Ok(energies
+    energies_ev
         .iter()
         .map(|&e| {
-            let sqrt_e = (e * unit_in_ev).sqrt();
+            let sqrt_e = e.sqrt();
             let per_ev: f64 = com_sqrt_energies
                 .iter()
                 .zip(com_weights.iter())
                 .map(|(&sqrt_e_com, &w)| (-a * (sqrt_e - sqrt_e_com).powi(2)).exp() / sqrt_e_com * w)
                 .sum();
-            norm * per_ev * unit_in_ev
+            norm * per_ev
         })
-        .collect())
+        .collect()
+}
+
+/// Mean energy in eV of the TT neutron spectrum, by the trapezium rule on a
+/// 10 keV grid up to 12 MeV (the centre of mass spectrum ends at 9.4 MeV).
+fn tt_mean_energy_ev(ion_temperature_ev: f64) -> f64 {
+    let energies_ev: Vec<f64> = (0..=1200).map(|i| i as f64 * 1e4).collect();
+    let spectrum = tt_spectrum_per_ev(&energies_ev, ion_temperature_ev);
+    let (mut first_moment, mut zeroth_moment) = (0.0, 0.0);
+    for i in 0..energies_ev.len() - 1 {
+        let width = energies_ev[i + 1] - energies_ev[i];
+        first_moment += 0.5 * (energies_ev[i] * spectrum[i] + energies_ev[i + 1] * spectrum[i + 1]) * width;
+        zeroth_moment += 0.5 * (spectrum[i] + spectrum[i + 1]) * width;
+    }
+    first_moment / zeroth_moment
+}
+
+// The reactions in the order returned by relative_reaction_rates, with the
+// energy released per reaction (keV) and neutrons emitted per reaction. The
+// energies are Q-values from the AME2020 atomic mass excesses,
+// M. Wang et al 2021 Chinese Phys. C 45 030003.
+const REACTIONS: [(&str, f64, u32); 4] = [
+    ("D+T=n+a", 17589.299865, 1),
+    ("D+D=n+He3", 3268.90885, 1),
+    ("D+D=p+T", 4032.663826, 0),
+    ("T+T=2n+a", 11332.06981, 2),
+];
+
+const ELEMENTARY_CHARGE: f64 = 1.602176634e-19;
+
+fn reaction_index(reaction: &str) -> PyResult<usize> {
+    REACTIONS
+        .iter()
+        .position(|(name, _, _)| *name == reaction)
+        .ok_or_else(|| value_error("reaction must be one of 'D+T=n+a', 'D+D=n+He3', 'D+D=p+T' or 'T+T=2n+a'"))
+}
+
+#[pyfunction(signature = (reaction, energy_units=None))]
+#[pyo3(text_signature = "(reaction, energy_units='eV')")]
+/// Energy released per fusion reaction (the Q-value), from the AME2020 atomic
+/// mass excesses.
+///
+/// Parameters
+/// ----------
+/// reaction : str
+///     One of 'D+T=n+a', 'D+D=n+He3', 'D+D=p+T' or 'T+T=2n+a'.
+/// energy_units : str, optional
+///     The units of the returned energy, 'eV', 'keV', 'MeV' or 'GeV'. Default is 'eV'.
+///
+/// Returns
+/// -------
+/// float
+///     The energy released per reaction.
+fn fusion_energy_per_reaction(reaction: &str, energy_units: Option<&str>) -> PyResult<f64> {
+    scale_energy_in_kev_to_requested_units(REACTIONS[reaction_index(reaction)?].1, energy_units)
+}
+
+#[pyfunction]
+#[pyo3(text_signature = "(reaction)")]
+/// Number of neutrons emitted per fusion reaction.
+///
+/// Parameters
+/// ----------
+/// reaction : str
+///     One of 'D+T=n+a', 'D+D=n+He3', 'D+D=p+T' or 'T+T=2n+a'.
+///
+/// Returns
+/// -------
+/// int
+///     1 for D+T=n+a and D+D=n+He3, 0 for D+D=p+T and 2 for T+T=2n+a.
+fn neutrons_per_reaction(reaction: &str) -> PyResult<u32> {
+    Ok(REACTIONS[reaction_index(reaction)?].2)
+}
+
+/// Fractions of all neutrons that come from DT, DD (n+He3), DD (p+T) and TT.
+fn neutron_fractions(reaction_fractions: &[f64; 4]) -> [f64; 4] {
+    let per_reaction: Vec<f64> = reaction_fractions
+        .iter()
+        .zip(REACTIONS.iter())
+        .map(|(fraction, (_, _, neutrons))| fraction * *neutrons as f64)
+        .collect();
+    let total: f64 = per_reaction.iter().sum();
+    [per_reaction[0] / total, per_reaction[1] / total, per_reaction[2] / total, per_reaction[3] / total]
+}
+
+#[pyfunction(signature = (ion_temperature, temperature_units=None, deuterium_fraction=None, tritium_fraction=None, equation=None))]
+#[pyo3(text_signature = "(ion_temperature, temperature_units='eV', deuterium_fraction=0.5, tritium_fraction=0.5, equation='Bosch-Hale')")]
+/// Fractions of all neutrons emitted by each reaction, for a given ion
+/// temperature and fuel composition.
+///
+/// Unlike relative_reaction_rates this counts neutrons, so D+D=p+T contributes
+/// none and each T+T=2n+a reaction contributes two. These are the relative
+/// source strengths to use for each reaction in OpenMC.
+///
+/// Parameters
+/// ----------
+/// ion_temperature : float
+///     The ion temperature.
+/// temperature_units : str, optional
+///     The units of the ion temperature. Default is 'eV'.
+/// deuterium_fraction : float, optional
+///     The fraction of fuel ions that are deuterium. Default is 0.5.
+/// tritium_fraction : float, optional
+///     The fraction of fuel ions that are tritium. Default is 0.5.
+/// equation : str, optional
+///     The equation used for the D+T reactivity. Default is 'Bosch-Hale'.
+///
+/// Returns
+/// -------
+/// List[float]
+///     The fractions of all neutrons from DT, DD (n+He3), DD (p+T) and TT, in that order.
+fn relative_neutron_rates(
+    ion_temperature: f64,
+    temperature_units: Option<&str>,
+    deuterium_fraction: Option<f64>,
+    tritium_fraction: Option<f64>,
+    equation: Option<&str>,
+) -> PyResult<Vec<f64>> {
+    let ion_temperature_kev = scale_temperature_units_to_kev(ion_temperature, temperature_units)?;
+    let fractions = reaction_fractions(ion_temperature_kev, deuterium_fraction, tritium_fraction, equation)?;
+    Ok(neutron_fractions(&fractions).to_vec())
+}
+
+#[pyfunction(signature = (fusion_power, ion_temperature, temperature_units=None, deuterium_fraction=None, tritium_fraction=None, equation=None))]
+#[pyo3(text_signature = "(fusion_power, ion_temperature, temperature_units='eV', deuterium_fraction=0.5, tritium_fraction=0.5, equation='Bosch-Hale')")]
+/// Neutron emission rate for a given fusion power, ion temperature and fuel
+/// composition.
+///
+/// The fusion power is divided by the mean energy released per reaction, for
+/// the mix of reactions at this temperature and fuel composition, and
+/// multiplied by the mean number of neutrons per reaction. All four reactions
+/// are included. This is the number to multiply OpenMC tally results (per
+/// source neutron) by to get rates.
+///
+/// Parameters
+/// ----------
+/// fusion_power : float
+///     The fusion power in W.
+/// ion_temperature : float
+///     The ion temperature.
+/// temperature_units : str, optional
+///     The units of the ion temperature. Default is 'eV'.
+/// deuterium_fraction : float, optional
+///     The fraction of fuel ions that are deuterium. Default is 0.5.
+/// tritium_fraction : float, optional
+///     The fraction of fuel ions that are tritium. Default is 0.5.
+/// equation : str, optional
+///     The equation used for the D+T reactivity. Default is 'Bosch-Hale'.
+///
+/// Returns
+/// -------
+/// float
+///     Neutrons emitted per second.
+fn neutron_rate_from_fusion_power(
+    fusion_power: f64,
+    ion_temperature: f64,
+    temperature_units: Option<&str>,
+    deuterium_fraction: Option<f64>,
+    tritium_fraction: Option<f64>,
+    equation: Option<&str>,
+) -> PyResult<f64> {
+    if !(fusion_power >= 0.0) {
+        return Err(value_error("fusion_power must be non-negative"));
+    }
+    let ion_temperature_kev = scale_temperature_units_to_kev(ion_temperature, temperature_units)?;
+    let fractions = reaction_fractions(ion_temperature_kev, deuterium_fraction, tritium_fraction, equation)?;
+    let mut energy_per_reaction_joules = 0.0;
+    let mut neutrons_per_reaction = 0.0;
+    for (fraction, (_, q_kev, neutrons)) in fractions.iter().zip(REACTIONS.iter()) {
+        energy_per_reaction_joules += fraction * q_kev * 1e3 * ELEMENTARY_CHARGE;
+        neutrons_per_reaction += fraction * *neutrons as f64;
+    }
+    Ok(fusion_power / energy_per_reaction_joules * neutrons_per_reaction)
+}
+
+#[pyfunction(signature = (ion_temperature, temperature_units=None, neutron_energy_units=None, deuterium_fraction=None, tritium_fraction=None, equation=None))]
+#[pyo3(text_signature = "(ion_temperature, temperature_units='eV', neutron_energy_units='eV', deuterium_fraction=0.5, tritium_fraction=0.5, equation='Bosch-Hale')")]
+/// Mean energy of the emitted neutrons for a given ion temperature and fuel
+/// composition, averaged over all neutrons from all reactions.
+///
+/// The D+T and D+D means use the Ballabio fits (as in
+/// neutron_energy_mean_and_std_dev) and the T+T mean is the mean of the
+/// spectrum from neutron_energy_spectrum.
+///
+/// Parameters
+/// ----------
+/// ion_temperature : float
+///     The ion temperature.
+/// temperature_units : str, optional
+///     The units of the ion temperature. Default is 'eV'.
+/// neutron_energy_units : str, optional
+///     The units of the returned energy. Default is 'eV'.
+/// deuterium_fraction : float, optional
+///     The fraction of fuel ions that are deuterium. Default is 0.5.
+/// tritium_fraction : float, optional
+///     The fraction of fuel ions that are tritium. Default is 0.5.
+/// equation : str, optional
+///     The equation used for the D+T reactivity. Default is 'Bosch-Hale'.
+///
+/// Returns
+/// -------
+/// float
+///     The mean neutron energy.
+fn mean_neutron_energy(
+    ion_temperature: f64,
+    temperature_units: Option<&str>,
+    neutron_energy_units: Option<&str>,
+    deuterium_fraction: Option<f64>,
+    tritium_fraction: Option<f64>,
+    equation: Option<&str>,
+) -> PyResult<f64> {
+    let ion_temperature_kev = scale_temperature_units_to_kev(ion_temperature, temperature_units)?;
+    let fractions = neutron_fractions(&reaction_fractions(ion_temperature_kev, deuterium_fraction, tritium_fraction, equation)?);
+    let (dt_mean_ev, _) = neutron_energy_mean_and_std_dev(ion_temperature_kev, Some("keV"), Some("eV"), Some("D+T=n+a"))?;
+    let (dd_mean_ev, _) = neutron_energy_mean_and_std_dev(ion_temperature_kev, Some("keV"), Some("eV"), Some("D+D=n+He3"))?;
+    let tt_mean_ev = if fractions[3] > 0.0 { tt_mean_energy_ev(ion_temperature_kev * 1e3) } else { 0.0 };
+    let mean_ev = fractions[0] * dt_mean_ev + fractions[1] * dd_mean_ev + fractions[3] * tt_mean_ev;
+    scale_energy_in_kev_to_requested_units(mean_ev / 1e3, neutron_energy_units)
 }
 
 fn value_error(message: &str) -> PyErr {
@@ -390,6 +620,11 @@ fn fusion_neutron_utils(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(relative_reaction_rates, m)?)?;
     m.add_function(wrap_pyfunction!(neutron_energy_mean_and_std_dev, m)?)?;
     m.add_function(wrap_pyfunction!(neutron_energy_spectrum, m)?)?;
+    m.add_function(wrap_pyfunction!(fusion_energy_per_reaction, m)?)?;
+    m.add_function(wrap_pyfunction!(neutrons_per_reaction, m)?)?;
+    m.add_function(wrap_pyfunction!(relative_neutron_rates, m)?)?;
+    m.add_function(wrap_pyfunction!(neutron_rate_from_fusion_power, m)?)?;
+    m.add_function(wrap_pyfunction!(mean_neutron_energy, m)?)?;
     Ok(())
 }
 
