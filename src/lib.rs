@@ -9,30 +9,25 @@ fn neutron_energy_mean_and_std_dev(
     neutron_energy_units: Option<&str>,
     reaction: Option<&str>,
 ) -> PyResult<(f64, f64)> {
-    let reaction = reaction.unwrap_or("D+T=n+a");
-
     // values from Ballabio paper
     let (a_1, a_2, a_3, a_4, mean) = match reaction {
-        "D+D=n+He3" => (4.69515, -0.040729, 0.47, 0.81844, 2.4486858678216934e6),
-        "D+T=n+a" => (5.30509, 0.0024736, 1.84, 1.3818, 14028394.744466662),
+        Some("D+D=n+He3") => (4.69515, -0.040729, 0.47, 0.81844, 2.4486858678216934e6),
+        Some("D+T=n+a") => (5.30509, 0.0024736, 1.84, 1.3818, 14028394.744466662),
         _ => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("reaction must be either 'D+D=n+He3' or 'D+T=n+a'")),
     };
 
     let ion_temperature_kev: f64 = scale_temperature_units_to_kev(ion_temperature, temperature_units)?; // Ballabio equation accepts KeV units
-    if ion_temperature_kev <= 0.0 {
-        return Err(value_error("Ion temperature must be positive and non-zero"));
-    }
 
     // units of mean_delta are in put into ev with the 1000 multiplication
-    let mean_delta = 1000.0 *( a_1 * ion_temperature_kev.powf(2.0 / 3.0) / (1.0 + a_2 * ion_temperature_kev.powf(a_3)) + a_4 * ion_temperature_kev);
+    let mean_delta = 1000.0 *( a_1 * ion_temperature_kev.powf(0.66666666) / (1.0 + a_2 * ion_temperature_kev.powf(a_3)) + a_4 * ion_temperature_kev);
 
     let mean_adjusted = mean + mean_delta;  
 
     let mean_scaled =  scale_energy_in_kev_to_requested_units(mean_adjusted/1e3, neutron_energy_units)?;
 
     let (w_0, a_1, a_2, a_3, a_4) = match reaction {
-        "D+D=n+He3" => (82.542, 1.7013e-3, 0.16888, 0.49, 7.9460e-4),
-        "D+T=n+a" => (177.259, 5.1068e-4, 7.6223e-3, 1.78, 8.7691e-5),
+        Some("D+D=n+He3") => (82.542, 1.7013e-3, 0.16888, 0.49, 7.9460e-4),
+        Some("D+T=n+a") => (177.259, 5.1068e-4, 7.6223e-3, 1.78, 8.7691e-5),
         _ => unreachable!(), // This case is already handled above
     };
 
