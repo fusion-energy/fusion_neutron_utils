@@ -92,3 +92,15 @@ def test_mean_energy_units():
     assert mean_kev == mean_ev/1e3
 
 # def test_
+
+def test_default_reaction_is_dt():
+    assert neutron_energy_mean_and_std_dev(20e3) == neutron_energy_mean_and_std_dev(
+        20e3, reaction='D+T=n+a'
+    )
+
+
+def test_non_positive_temperature_raises():
+    import pytest
+    for ion_temperature in (0.0, -10e3):
+        with pytest.raises(ValueError, match="positive"):
+            neutron_energy_mean_and_std_dev(ion_temperature, reaction='D+T=n+a')
