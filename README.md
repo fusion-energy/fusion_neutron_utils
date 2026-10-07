@@ -56,7 +56,7 @@ neutron_energy_spectrum(
     neutron_energy_units='MeV',
     reaction='T+T=2n+a',
 )
->>>[0.12770950136868156, 0.13181225603982472, 0.12147036033626678]
+>>>[0.12770960205659812, 0.1318122754001592, 0.12147037216888906]
 ```
 
 ### Reactivity
@@ -171,7 +171,7 @@ mean_neutron_energy(
     deuterium_fraction=0.5,
     tritium_fraction=0.5,
 )
->>>13.999459130682638
+>>>13.999459128872088
 ```
 
 ### Comparing fuel mixes and temperatures

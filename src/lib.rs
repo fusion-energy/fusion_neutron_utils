@@ -325,38 +325,61 @@ fn neutron_energy_spectrum(
 
 /// TT neutron spectrum dN/dE in 1/eV at energies in eV, normalised to 1.
 fn tt_spectrum_per_ev(energies_ev: &[f64], ion_temperature_ev: f64) -> Vec<f64> {
+    // Appelbe et al. HEDP 2016, as implemented in NeSST TT_spectrum_model.spec.
+    // The kernel exp(-a (sqrt(E) - sqrt(E'))^2) is a Gaussian in sqrt(E) with
+    // standard deviation 1 / sqrt(2 a).
+    let a = 2.0 * TRITON_NEUTRON_MASS_RATIO / ion_temperature_ev;
+
+    // Grid points per kernel width, the minimum and maximum refinement of the
+    // data grid, and the number of kernel standard deviations summed over.
+    // Chosen so the spectrum is within 6e-5 of the peak of a fully converged
+    // calculation from 0.1 keV to 300 keV.
+    const REFINE_PER_KERNEL_WIDTH: f64 = 4.0;
+    const MIN_REFINE: usize = 8;
+    const MAX_REFINE: usize = 64;
+    const KERNEL_CUTOFF: f64 = 6.0;
+
     // The tabulated centre of mass spectrum is linearly interpolated onto a
-    // finer grid, as the 37 keV data spacing is too coarse for the narrow
-    // broadening kernel at low ion temperatures. Integrals use the trapezium
-    // rule. The E = 0 point is skipped as the kernel has a 1 / sqrt(E) factor
-    // and the spectrum is zero there.
-    const REFINE: usize = 16;
+    // finer grid. The kernel width in energy at 1 MeV, 2 sqrt(1 MeV) / sqrt(2 a),
+    // sets the refinement, which is highest at low ion temperatures where the
+    // kernel is narrow compared with the 37 keV data spacing. A minimum
+    // refinement resolves the 1 / sqrt(E') factor at low E' when the kernel
+    // is wide.
+    let data_spacing = (tt_data::TT_COM_SPECTRUM_ENERGY_MEV[1] - tt_data::TT_COM_SPECTRUM_ENERGY_MEV[0]) * 1e6;
+    let kernel_width_at_1_mev = 2.0 * 1e3 / (2.0 * a).sqrt();
+    let refine = ((REFINE_PER_KERNEL_WIDTH * data_spacing / kernel_width_at_1_mev).ceil() as usize).clamp(MIN_REFINE, MAX_REFINE);
+
+    // Integrals use the trapezium rule. The E = 0 point is skipped as the
+    // kernel has a 1 / sqrt(E) factor and the spectrum is zero there.
     let com_data = &tt_data::TT_COM_SPECTRUM;
-    let d_energy = (tt_data::TT_COM_SPECTRUM_ENERGY_MEV[1] - tt_data::TT_COM_SPECTRUM_ENERGY_MEV[0]) * 1e6 / REFINE as f64;
-    let n_fine = (com_data.len() - 1) * REFINE + 1;
+    let d_energy = data_spacing / refine as f64;
+    let n_fine = (com_data.len() - 1) * refine + 1;
     let mut com_sqrt_energies = Vec::with_capacity(n_fine - 1);
     let mut com_weights = Vec::with_capacity(n_fine - 1);
     for k in 1..n_fine {
-        let (i, step) = (k / REFINE, (k % REFINE) as f64 / REFINE as f64);
+        let (i, step) = (k / refine, (k % refine) as f64 / refine as f64);
         let value = if step == 0.0 { com_data[i] } else { com_data[i] + step * (com_data[i + 1] - com_data[i]) };
         let trapezium = if k == n_fine - 1 { 0.5 } else { 1.0 };
         com_sqrt_energies.push((k as f64 * d_energy).sqrt());
-        com_weights.push(value * trapezium * d_energy);
+        com_weights.push(value * trapezium * d_energy / (k as f64 * d_energy).sqrt());
     }
-    let integral: f64 = com_weights.iter().sum();
-
-    // Appelbe et al. HEDP 2016, as implemented in NeSST TT_spectrum_model.spec
-    let a = 2.0 * TRITON_NEUTRON_MASS_RATIO / ion_temperature_ev;
+    let integral: f64 = com_weights.iter().zip(com_sqrt_energies.iter()).map(|(w, s)| w * s).sum();
     let norm = 0.5 * (a / std::f64::consts::PI).sqrt() / integral;
+
+    // Only centre of mass energies within KERNEL_CUTOFF standard deviations
+    // contribute, the kernel is below exp(-KERNEL_CUTOFF^2 / 2) beyond that.
+    let window = KERNEL_CUTOFF / (2.0 * a).sqrt();
 
     energies_ev
         .iter()
         .map(|&e| {
             let sqrt_e = e.sqrt();
-            let per_ev: f64 = com_sqrt_energies
+            let lo = com_sqrt_energies.partition_point(|&s| s < sqrt_e - window);
+            let hi = com_sqrt_energies.partition_point(|&s| s <= sqrt_e + window);
+            let per_ev: f64 = com_sqrt_energies[lo..hi]
                 .iter()
-                .zip(com_weights.iter())
-                .map(|(&sqrt_e_com, &w)| (-a * (sqrt_e - sqrt_e_com).powi(2)).exp() / sqrt_e_com * w)
+                .zip(com_weights[lo..hi].iter())
+                .map(|(&sqrt_e_com, &w)| (-a * (sqrt_e - sqrt_e_com).powi(2)).exp() * w)
                 .sum();
             norm * per_ev
         })
