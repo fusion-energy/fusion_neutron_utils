@@ -38,16 +38,16 @@ neutron_energy_mean_and_std_dev(
 ```
 
 
-The relative reaction rates can be found for the different reactions, this can be useful for setting the relative ```Source.strength``` in OpenMC. Relative reaction rates returns the DT, DD (n+He3), and DD (p+T) reaction rates in that order. Note the  DD (p+T)  does not emit a neutron but is there for completeness.
+The relative reaction rates can be found for the different reactions, this can be useful for setting the relative ```Source.strength``` in OpenMC. Relative reaction rates returns the fractions of all reactions that are DT, DD (n+He3), and DD (p+T), in that order, for a fuel with the given fractions of deuterium and tritium ions. Note the  DD (p+T)  does not emit a neutron but is there for completeness.
 ```python
 from fusion_neutron_utils import relative_reaction_rates
 relative_reaction_rates(
     ion_temperature=30e3,
     temperature_units='eV',
-    dt_fraction=0.1,
-    dd_fraction=0.9,  
+    deuterium_fraction=0.5,
+    tritium_fraction=0.5,
 )
->>>[0.8812908657843926, 0.06257395592348476, 0.05613517829212257]
+>>>[0.9925722972824813, 0.0039152904747379825, 0.003512412242780669]
 ```
 
 The reactivity can also be found, this can be useful for finding the relative reaction rate for D+D or D+T at a specific temperature

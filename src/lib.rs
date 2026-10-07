@@ -9,25 +9,30 @@ fn neutron_energy_mean_and_std_dev(
     neutron_energy_units: Option<&str>,
     reaction: Option<&str>,
 ) -> PyResult<(f64, f64)> {
+    let reaction = reaction.unwrap_or("D+T=n+a");
+
     // values from Ballabio paper
     let (a_1, a_2, a_3, a_4, mean) = match reaction {
-        Some("D+D=n+He3") => (4.69515, -0.040729, 0.47, 0.81844, 2.4486858678216934e6),
-        Some("D+T=n+a") => (5.30509, 0.0024736, 1.84, 1.3818, 14028394.744466662),
+        "D+D=n+He3" => (4.69515, -0.040729, 0.47, 0.81844, 2.4486858678216934e6),
+        "D+T=n+a" => (5.30509, 0.0024736, 1.84, 1.3818, 14028394.744466662),
         _ => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("reaction must be either 'D+D=n+He3' or 'D+T=n+a'")),
     };
 
-    let ion_temperature_kev: f64 = scale_temperature_units_to_kev(ion_temperature, temperature_units); // Ballabio equation accepts KeV units
+    let ion_temperature_kev: f64 = scale_temperature_units_to_kev(ion_temperature, temperature_units)?; // Ballabio equation accepts KeV units
+    if ion_temperature_kev <= 0.0 {
+        return Err(value_error("Ion temperature must be positive and non-zero"));
+    }
 
     // units of mean_delta are in put into ev with the 1000 multiplication
-    let mean_delta = 1000.0 *( a_1 * ion_temperature_kev.powf(0.66666666) / (1.0 + a_2 * ion_temperature_kev.powf(a_3)) + a_4 * ion_temperature_kev);
+    let mean_delta = 1000.0 *( a_1 * ion_temperature_kev.powf(2.0 / 3.0) / (1.0 + a_2 * ion_temperature_kev.powf(a_3)) + a_4 * ion_temperature_kev);
 
     let mean_adjusted = mean + mean_delta;  
 
-    let mean_scaled =  scale_energy_in_kev_to_requested_units(mean_adjusted/1e3, neutron_energy_units);
+    let mean_scaled =  scale_energy_in_kev_to_requested_units(mean_adjusted/1e3, neutron_energy_units)?;
 
     let (w_0, a_1, a_2, a_3, a_4) = match reaction {
-        Some("D+D=n+He3") => (82.542, 1.7013e-3, 0.16888, 0.49, 7.9460e-4),
-        Some("D+T=n+a") => (177.259, 5.1068e-4, 7.6223e-3, 1.78, 8.7691e-5),
+        "D+D=n+He3" => (82.542, 1.7013e-3, 0.16888, 0.49, 7.9460e-4),
+        "D+T=n+a" => (177.259, 5.1068e-4, 7.6223e-3, 1.78, 8.7691e-5),
         _ => unreachable!(), // This case is already handled above
     };
 
@@ -37,7 +42,7 @@ fn neutron_energy_mean_and_std_dev(
     let variance = ((w_0 * (1.0 + delta)).powi(2) * ion_temperature_kev) / 2.3548200450309493_f64.powi(2);
     // let variance = variance * 1e6; // converting keV^2 back to eV^2
     let std_dev = variance.sqrt();
-    let std_dev = scale_energy_in_kev_to_requested_units(std_dev, neutron_energy_units);
+    let std_dev = scale_energy_in_kev_to_requested_units(std_dev, neutron_energy_units)?;
 
     Ok((mean_scaled, std_dev))
 }
@@ -79,7 +84,7 @@ fn reactivity(
     let reaction = reaction.unwrap_or("D+T=n+a");
     let equation_str = equation.unwrap_or("Bosch-Hale");
 
-    let ion_temperature_kev: f64 = scale_temperature_units_to_kev(ion_temperature, temperature_units);
+    let ion_temperature_kev: f64 = scale_temperature_units_to_kev(ion_temperature, temperature_units)?;
 
     let sigma_thermal_reactivity_scaled = if equation_str == "Bosch-Hale"{
         let (c1, c2, c3, c4, c5, c6, c7, gamov, mrc2) = if reaction == "D+T=n+a" {
@@ -102,24 +107,29 @@ fn reactivity(
         };
 
         let sigma_thermal_reactivity =  bosch_and_hale_equations(c1, c2, c3, c4, c5, c6, c7, gamov, mrc2, ion_temperature_kev)?;
-        Ok(scale_reactivity_units(sigma_thermal_reactivity, reactivity_units))
+        scale_reactivity_units(sigma_thermal_reactivity, reactivity_units)
     }else if equation_str == "Sadler-Van Belle"{
         if reaction != "D+T=n+a" {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Only 'D+T=n+a' reaction is supported for 'Sadler-Van Belle' equation"));
         }
         let sigma_thermal_reactivity = sadler_van_belle(ion_temperature_kev)?;
-        Ok(scale_reactivity_units(sigma_thermal_reactivity, reactivity_units))
+        scale_reactivity_units(sigma_thermal_reactivity, reactivity_units)
     }else{
-        panic!("Only 'Bosch-Hale' and 'Sadler-Van Belle' equations are supported");
+        Err(value_error("Only 'Bosch-Hale' and 'Sadler-Van Belle' equations are supported"))
     };
     sigma_thermal_reactivity_scaled
     
 }
 
 
-#[pyfunction(signature = (ion_temperature, temperature_units=None, dt_fraction=None, dd_fraction=None, equation=None))]
-#[pyo3(text_signature = "(ion_temperature, temperature_units='eV', dt_fraction=0.5, dd_fraction=0.5 equation='Bosch-Hale')")]
-/// Calculate the relative reaction rates for given ion temperature and isotope fractions.
+#[pyfunction(signature = (ion_temperature, temperature_units=None, deuterium_fraction=None, tritium_fraction=None, equation=None))]
+#[pyo3(text_signature = "(ion_temperature, temperature_units='eV', deuterium_fraction=0.5, tritium_fraction=0.5, equation='Bosch-Hale')")]
+/// Calculate the relative reaction rates for given ion temperature and fuel composition.
+///
+/// The reaction rate per unit volume between ion species i and j is
+/// n_i * n_j * <sigma v>_ij / (1 + delta_ij), so for fuel ion fractions f_D
+/// and f_T the DT rate is proportional to f_D * f_T * <sigma v>_DT and each
+/// DD branch to f_D^2 / 2 * <sigma v>_DD.
 ///
 /// Parameters
 /// ----------
@@ -127,79 +137,65 @@ fn reactivity(
 ///     The ion temperature.
 /// temperature_units : str, optional
 ///     The units of the ion temperature. Default is 'eV'.
-/// dt_fraction : float, optional
-///     The fraction of DT reactions. Default is 0.5.
-/// dd_fraction : float, optional
-///     The fraction of DD reactions. Default is 0.5.
+/// deuterium_fraction : float, optional
+///     The fraction of fuel ions that are deuterium. Default is 0.5.
+/// tritium_fraction : float, optional
+///     The fraction of fuel ions that are tritium. Default is 0.5.
 /// equation : str, optional
-///     The equation to use for reactivity calculations. Default is 'Bosch-Hale'.
+///     The equation used for the D+T reactivity, 'Bosch-Hale' or
+///     'Sadler-Van Belle'. The D+D reactivities always use Bosch-Hale.
+///     Default is 'Bosch-Hale'.
 ///
 /// Returns
 /// -------
 /// List[float]
-///     A list containing the relative reaction rates for DT, DD (n+He3), and DD (p+T) reactions.
+///     The fractions of all reactions that are DT, DD (n+He3) and DD (p+T), in that order.
 ///
 /// Examples
 /// --------
-/// >>> relative_reaction_rates(10.0)
-/// [dt_reactivity, dd_reactivity_1, dd_reactivity_2]
+/// >>> relative_reaction_rates(10e3)
+/// [dt_rate, dd_n_rate, dd_p_rate]
 ///
-/// >>> relative_reaction_rates(10.0, temperature_units='K', dt_fraction=0.3, dd_fraction=0.7, equation='Custom-Equation')
-/// [dt_reactivity, dd_reactivity_1, dd_reactivity_2]
+/// >>> relative_reaction_rates(10.0, temperature_units='keV', deuterium_fraction=0.9, tritium_fraction=0.1)
+/// [dt_rate, dd_n_rate, dd_p_rate]
 fn relative_reaction_rates(
     ion_temperature: f64,
     temperature_units: Option<&str>,
-    dt_fraction: Option<f64>,
-    dd_fraction: Option<f64>,
+    deuterium_fraction: Option<f64>,
+    tritium_fraction: Option<f64>,
     equation: Option<&str>,
 ) -> Result<Vec<f64>, PyErr> {
 
-    let ion_temperature_kev: f64 = scale_temperature_units_to_kev(ion_temperature, temperature_units);
+    let ion_temperature_kev: f64 = scale_temperature_units_to_kev(ion_temperature, temperature_units)?;
 
-    let dt_fraction = dt_fraction.unwrap_or(0.5);
-    let dd_fraction = dd_fraction.unwrap_or(0.5);
+    let deuterium_fraction = deuterium_fraction.unwrap_or(0.5);
+    let tritium_fraction = tritium_fraction.unwrap_or(0.5);
 
     let equation_str = equation.unwrap_or("Bosch-Hale");
-    
-    let total_fraction = dt_fraction + dd_fraction;
+
+    if !(0.0..=1.0).contains(&deuterium_fraction) || !(0.0..=1.0).contains(&tritium_fraction) {
+        return Err(value_error("deuterium_fraction and tritium_fraction must each be between 0 and 1"));
+    }
+    let total_fraction = deuterium_fraction + tritium_fraction;
     let tol : f64 = 0.000001;
     if !(total_fraction > 1. - tol && total_fraction < 1. + tol) {
-        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("The dt_fraction + dd_fraction do not sum to 1.0 and are not within a small tolerance (+/-0.000001)"));
+        return Err(value_error("The deuterium_fraction + tritium_fraction do not sum to 1.0 and are not within a small tolerance (+/-0.000001)"));
+    }
+    if deuterium_fraction == 0.0 {
+        return Err(value_error("deuterium_fraction must be above 0, without deuterium there are no D+T or D+D reactions"));
     }
 
-    let dt_reactivity = reactivity(
-        ion_temperature_kev,
-        Some("keV"),
-        Some("m^3/s"),
-        Some("D+T=n+a"),
-        Some(equation_str)
-        // Some("Bosch-Hale")
-    )?;
+    let dt_reactivity = reactivity(ion_temperature_kev, Some("keV"), Some("m^3/s"), Some("D+T=n+a"), Some(equation_str))?;
+    let dd_reactivity_1 = reactivity(ion_temperature_kev, Some("keV"), Some("m^3/s"), Some("D+D=n+He3"), Some("Bosch-Hale"))?;
+    let dd_reactivity_2 = reactivity(ion_temperature_kev, Some("keV"), Some("m^3/s"), Some("D+D=p+T"), Some("Bosch-Hale"))?;
 
-    let dd_reactivity_1 = reactivity(
-        ion_temperature_kev,
-        Some("keV"),
-        Some("m^3/s"),
-        Some("D+D=n+He3"),
-        Some(equation_str)
-        // Some("Bosch-Hale")
-    )?;
+    let dt_rate = deuterium_fraction * tritium_fraction * dt_reactivity;
+    let dd_rate_1 = 0.5 * deuterium_fraction.powi(2) * dd_reactivity_1;
+    let dd_rate_2 = 0.5 * deuterium_fraction.powi(2) * dd_reactivity_2;
 
-    let dd_reactivity_2 = reactivity(
-        ion_temperature_kev,
-        Some("keV"),
-        Some("m^3/s"),
-        Some("D+D=p+T"),
-        Some(equation_str)
-        // Some("Bosch-Hale")
-    )?;
+    let total_rate = dt_rate + dd_rate_1 + dd_rate_2;
 
-    let total_reactivity = dt_reactivity * dt_fraction + dd_reactivity_1 * dd_fraction + dd_reactivity_2 * dd_fraction;
-    let dt_normalized = dt_reactivity * dt_fraction / total_reactivity;
-    let dd1_normalized = dd_reactivity_1 * dd_fraction / total_reactivity;
-    let dd2_normalized = dd_reactivity_2 * dd_fraction / total_reactivity;
-
-    Ok(vec![dt_normalized, dd1_normalized, dd2_normalized])
+    Ok(vec![dt_rate / total_rate, dd_rate_1 / total_rate, dd_rate_2 / total_rate])
 
 }
 
@@ -239,32 +235,36 @@ fn bosch_and_hale_equations(c1: f64, c2: f64, c3: f64, c4: f64, c5: f64, c6: f64
     Ok(sigma_thermal_reactivity)
 }
 
-fn scale_reactivity_units(sigma_thermal_reactivity: f64, reactivity_units: Option<&str>) -> f64 {
+fn value_error(message: &str) -> PyErr {
+    PyErr::new::<pyo3::exceptions::PyValueError, _>(message.to_string())
+}
+
+fn scale_reactivity_units(sigma_thermal_reactivity: f64, reactivity_units: Option<&str>) -> PyResult<f64> {
     match reactivity_units.unwrap_or("m^3/s") {
-        "m^3/s" => sigma_thermal_reactivity * 1.0e-6,
-        "cm^3/s" => sigma_thermal_reactivity,
-        "mm^3/s" => sigma_thermal_reactivity * 1.0e3,
-        _ => panic!("Invalid reaction rate units, accepted values are 'm^3/s', 'cm^3/s', 'mm^3/s'")
+        "m^3/s" => Ok(sigma_thermal_reactivity * 1.0e-6),
+        "cm^3/s" => Ok(sigma_thermal_reactivity),
+        "mm^3/s" => Ok(sigma_thermal_reactivity * 1.0e3),
+        _ => Err(value_error("Invalid reaction rate units, accepted values are 'm^3/s', 'cm^3/s', 'mm^3/s'")),
     }
 }
 
-fn scale_temperature_units_to_kev(ion_temperature: f64, temperature_units: Option<&str>) -> f64 {
+fn scale_temperature_units_to_kev(ion_temperature: f64, temperature_units: Option<&str>) -> PyResult<f64> {
     match temperature_units.unwrap_or("eV") {
-        "keV" => ion_temperature,
-        "eV" => ion_temperature * 1e-3,
-        "MeV" => ion_temperature * 1e3,
-        "GeV" => ion_temperature * 1e6,
-        _ => panic!("Invalid temperature units, accepted values are 'eV', 'keV', 'MeV' or 'GeV'")
-    } 
+        "keV" => Ok(ion_temperature),
+        "eV" => Ok(ion_temperature * 1e-3),
+        "MeV" => Ok(ion_temperature * 1e3),
+        "GeV" => Ok(ion_temperature * 1e6),
+        _ => Err(value_error("Invalid temperature units, accepted values are 'eV', 'keV', 'MeV' or 'GeV'")),
+    }
 }
 
-fn scale_energy_in_kev_to_requested_units(energy_in_kev: f64, temperature_units: Option<&str>) -> f64 {
-    match temperature_units.unwrap_or("eV") {
-        "eV" => energy_in_kev * 1e3, // converting keV to eV
-        "keV" => energy_in_kev, // converting keV to MeV
-        "MeV" => energy_in_kev / 1e3, // converting keV to MeV
-        "GeV" => energy_in_kev / 1e6, // converting keV to GeV
-        _ => panic!("Unsupported temperature units, accepted values are 'eV', 'MeV', 'GeV'"),
+fn scale_energy_in_kev_to_requested_units(energy_in_kev: f64, energy_units: Option<&str>) -> PyResult<f64> {
+    match energy_units.unwrap_or("eV") {
+        "eV" => Ok(energy_in_kev * 1e3), // converting keV to eV
+        "keV" => Ok(energy_in_kev),
+        "MeV" => Ok(energy_in_kev / 1e3), // converting keV to MeV
+        "GeV" => Ok(energy_in_kev / 1e6), // converting keV to GeV
+        _ => Err(value_error("Invalid energy units, accepted values are 'eV', 'keV', 'MeV' or 'GeV'")),
     }
 }
 
@@ -288,7 +288,7 @@ mod tests {
     fn test_scale_temperature_units_to_kev_eV() {
         let ion_temperature = 1000.0; // 1000 eV
         let temperature_units = Some("eV");
-        let result = scale_temperature_units_to_kev(ion_temperature, temperature_units);
+        let result = scale_temperature_units_to_kev(ion_temperature, temperature_units).unwrap();
         assert_eq!(result, 1.0); // 1 keV
     }
 
@@ -296,7 +296,7 @@ mod tests {
     fn test_scale_temperature_units_to_kev_keV() {
         let ion_temperature = 1.0; // 1 keV
         let temperature_units = Some("keV");
-        let result = scale_temperature_units_to_kev(ion_temperature, temperature_units);
+        let result = scale_temperature_units_to_kev(ion_temperature, temperature_units).unwrap();
         assert_eq!(result, 1.0); // 1 keV
     }
 
@@ -304,7 +304,7 @@ mod tests {
     fn test_scale_temperature_units_to_kev_MeV() {
         let ion_temperature = 0.001; // 1 MeV
         let temperature_units = Some("MeV");
-        let result = scale_temperature_units_to_kev(ion_temperature, temperature_units);
+        let result = scale_temperature_units_to_kev(ion_temperature, temperature_units).unwrap();
         assert_eq!(result, 1.0); // 1 keV
     }
 
@@ -312,16 +312,15 @@ mod tests {
     fn test_scale_temperature_units_to_kev_GeV() {
         let ion_temperature = 0.000001; // 1 GeV
         let temperature_units = Some("GeV");
-        let result = scale_temperature_units_to_kev(ion_temperature, temperature_units);
+        let result = scale_temperature_units_to_kev(ion_temperature, temperature_units).unwrap();
         assert_eq!(result, 1.0); // 1 keV
     }
 
     #[test]
-    #[should_panic(expected = "Invalid temperature units")]
     fn test_scale_temperature_units_to_kev_invalid_units() {
         let ion_temperature = 1000.0;
         let temperature_units = Some("K");
-        scale_temperature_units_to_kev(ion_temperature, temperature_units);
+        assert!(scale_temperature_units_to_kev(ion_temperature, temperature_units).is_err());
     }
 }
 
@@ -334,7 +333,7 @@ mod tests2 {
     fn test_scale_to_ev() {
         let energy_in_kev = 1.0;
         let target_unit = "eV";
-        let result = scale_energy_in_kev_to_requested_units(energy_in_kev, Some(target_unit));
+        let result = scale_energy_in_kev_to_requested_units(energy_in_kev, Some(target_unit)).unwrap();
         assert_eq!(result, 1000.0); // 1 keV = 1000 eV
     }
 
@@ -342,7 +341,7 @@ mod tests2 {
     fn test_scale_to_mev() {
         let energy_in_kev = 1000.0;
         let target_unit = "MeV";
-        let result = scale_energy_in_kev_to_requested_units(energy_in_kev, Some(target_unit));
+        let result = scale_energy_in_kev_to_requested_units(energy_in_kev, Some(target_unit)).unwrap();
         assert_eq!(result, 1.0); // 1000 keV = 1 MeV
     }
 
@@ -350,16 +349,15 @@ mod tests2 {
     fn test_scale_to_gev() {
         let energy_in_kev = 1_000_000.0;
         let target_unit = "GeV";
-        let result = scale_energy_in_kev_to_requested_units(energy_in_kev, Some(target_unit));
+        let result = scale_energy_in_kev_to_requested_units(energy_in_kev, Some(target_unit)).unwrap();
         assert_eq!(result, 1.0); // 1,000,000 keV = 1 GeV
     }
 
     #[test]
-    #[should_panic(expected = "Unsupported temperature units, accepted values are 'eV', 'MeV', 'GeV'")]
     fn test_invalid_unit() {
         let energy_in_kev = 1.0;
         let target_unit = "invalid";
-        scale_energy_in_kev_to_requested_units(energy_in_kev, Some(target_unit));
+        assert!(scale_energy_in_kev_to_requested_units(energy_in_kev, Some(target_unit)).is_err());
     }
 }
 
@@ -371,7 +369,7 @@ mod tests3 {
     fn test_scale_to_m3_per_s() {
         let sigma_thermal_reactivity = 1.0;
         let reactivity_units = Some("m^3/s");
-        let result = scale_reactivity_units(sigma_thermal_reactivity, reactivity_units);
+        let result = scale_reactivity_units(sigma_thermal_reactivity, reactivity_units).unwrap();
         assert_eq!(result, 1.0 * 1.0e-6); // 1.0 * 1.0e-6 = 1.0e-6
     }
 
@@ -379,16 +377,15 @@ mod tests3 {
     fn test_scale_to_cm3_per_s() {
         let sigma_thermal_reactivity = 1.0;
         let reactivity_units = Some("cm^3/s");
-        let result = scale_reactivity_units(sigma_thermal_reactivity, reactivity_units);
+        let result = scale_reactivity_units(sigma_thermal_reactivity, reactivity_units).unwrap();
         assert_eq!(result, 1.0); // 1.0 cm^3/s = 1.0 cm^3/s
     }
 
 
     #[test]
-    #[should_panic(expected = "Invalid reaction rate units, accepted values are 'm^3/s', 'cm^3/s', 'mm^3/s'")]
     fn test_invalid_unit() {
         let sigma_thermal_reactivity = 1.0;
         let reactivity_units = Some("invalid");
-        scale_reactivity_units(sigma_thermal_reactivity, reactivity_units);
+        assert!(scale_reactivity_units(sigma_thermal_reactivity, reactivity_units).is_err());
     }
 }
