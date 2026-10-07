@@ -47,7 +47,7 @@ relative_reaction_rates(
     dt_fraction=0.1,
     dd_fraction=0.9,  
 )
->>>[0.9989900631769298, 0.0005595866500573114, 0.00045035017301275736] 
+>>>[0.8812908657843926, 0.06257395592348476, 0.05613517829212257]
 ```
 
 The reactivity can also be found, this can be useful for finding the relative reaction rate for D+D or D+T at a specific temperature
@@ -61,5 +61,5 @@ reactivity(
     reaction='D+D=p+T',
     equation='Bosch-Hale'
 )
->>>2.2356373732343755e-53
+>>>4.728252714517674e-24
 ```
