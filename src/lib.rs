@@ -122,9 +122,14 @@ fn reactivity(
 }
 
 
-#[pyfunction(signature = (ion_temperature, temperature_units=None, dt_fraction=None, dd_fraction=None, equation=None))]
-#[pyo3(text_signature = "(ion_temperature, temperature_units='eV', dt_fraction=0.5, dd_fraction=0.5 equation='Bosch-Hale')")]
-/// Calculate the relative reaction rates for given ion temperature and isotope fractions.
+#[pyfunction(signature = (ion_temperature, temperature_units=None, deuterium_fraction=None, tritium_fraction=None, equation=None))]
+#[pyo3(text_signature = "(ion_temperature, temperature_units='eV', deuterium_fraction=0.5, tritium_fraction=0.5, equation='Bosch-Hale')")]
+/// Calculate the relative reaction rates for given ion temperature and fuel composition.
+///
+/// The reaction rate per unit volume between ion species i and j is
+/// n_i * n_j * <sigma v>_ij / (1 + delta_ij), so for fuel ion fractions f_D
+/// and f_T the DT rate is proportional to f_D * f_T * <sigma v>_DT and each
+/// DD branch to f_D^2 / 2 * <sigma v>_DD.
 ///
 /// Parameters
 /// ----------
@@ -132,79 +137,65 @@ fn reactivity(
 ///     The ion temperature.
 /// temperature_units : str, optional
 ///     The units of the ion temperature. Default is 'eV'.
-/// dt_fraction : float, optional
-///     The fraction of DT reactions. Default is 0.5.
-/// dd_fraction : float, optional
-///     The fraction of DD reactions. Default is 0.5.
+/// deuterium_fraction : float, optional
+///     The fraction of fuel ions that are deuterium. Default is 0.5.
+/// tritium_fraction : float, optional
+///     The fraction of fuel ions that are tritium. Default is 0.5.
 /// equation : str, optional
-///     The equation to use for reactivity calculations. Default is 'Bosch-Hale'.
+///     The equation used for the D+T reactivity, 'Bosch-Hale' or
+///     'Sadler-Van Belle'. The D+D reactivities always use Bosch-Hale.
+///     Default is 'Bosch-Hale'.
 ///
 /// Returns
 /// -------
 /// List[float]
-///     A list containing the relative reaction rates for DT, DD (n+He3), and DD (p+T) reactions.
+///     The fractions of all reactions that are DT, DD (n+He3) and DD (p+T), in that order.
 ///
 /// Examples
 /// --------
-/// >>> relative_reaction_rates(10.0)
-/// [dt_reactivity, dd_reactivity_1, dd_reactivity_2]
+/// >>> relative_reaction_rates(10e3)
+/// [dt_rate, dd_n_rate, dd_p_rate]
 ///
-/// >>> relative_reaction_rates(10.0, temperature_units='K', dt_fraction=0.3, dd_fraction=0.7, equation='Custom-Equation')
-/// [dt_reactivity, dd_reactivity_1, dd_reactivity_2]
+/// >>> relative_reaction_rates(10.0, temperature_units='keV', deuterium_fraction=0.9, tritium_fraction=0.1)
+/// [dt_rate, dd_n_rate, dd_p_rate]
 fn relative_reaction_rates(
     ion_temperature: f64,
     temperature_units: Option<&str>,
-    dt_fraction: Option<f64>,
-    dd_fraction: Option<f64>,
+    deuterium_fraction: Option<f64>,
+    tritium_fraction: Option<f64>,
     equation: Option<&str>,
 ) -> Result<Vec<f64>, PyErr> {
 
     let ion_temperature_kev: f64 = scale_temperature_units_to_kev(ion_temperature, temperature_units)?;
 
-    let dt_fraction = dt_fraction.unwrap_or(0.5);
-    let dd_fraction = dd_fraction.unwrap_or(0.5);
+    let deuterium_fraction = deuterium_fraction.unwrap_or(0.5);
+    let tritium_fraction = tritium_fraction.unwrap_or(0.5);
 
     let equation_str = equation.unwrap_or("Bosch-Hale");
-    
-    let total_fraction = dt_fraction + dd_fraction;
+
+    if !(0.0..=1.0).contains(&deuterium_fraction) || !(0.0..=1.0).contains(&tritium_fraction) {
+        return Err(value_error("deuterium_fraction and tritium_fraction must each be between 0 and 1"));
+    }
+    let total_fraction = deuterium_fraction + tritium_fraction;
     let tol : f64 = 0.000001;
     if !(total_fraction > 1. - tol && total_fraction < 1. + tol) {
-        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("The dt_fraction + dd_fraction do not sum to 1.0 and are not within a small tolerance (+/-0.000001)"));
+        return Err(value_error("The deuterium_fraction + tritium_fraction do not sum to 1.0 and are not within a small tolerance (+/-0.000001)"));
+    }
+    if deuterium_fraction == 0.0 {
+        return Err(value_error("deuterium_fraction must be above 0, without deuterium there are no D+T or D+D reactions"));
     }
 
-    let dt_reactivity = reactivity(
-        ion_temperature_kev,
-        Some("keV"),
-        Some("m^3/s"),
-        Some("D+T=n+a"),
-        Some(equation_str)
-        // Some("Bosch-Hale")
-    )?;
+    let dt_reactivity = reactivity(ion_temperature_kev, Some("keV"), Some("m^3/s"), Some("D+T=n+a"), Some(equation_str))?;
+    let dd_reactivity_1 = reactivity(ion_temperature_kev, Some("keV"), Some("m^3/s"), Some("D+D=n+He3"), Some("Bosch-Hale"))?;
+    let dd_reactivity_2 = reactivity(ion_temperature_kev, Some("keV"), Some("m^3/s"), Some("D+D=p+T"), Some("Bosch-Hale"))?;
 
-    let dd_reactivity_1 = reactivity(
-        ion_temperature_kev,
-        Some("keV"),
-        Some("m^3/s"),
-        Some("D+D=n+He3"),
-        Some(equation_str)
-        // Some("Bosch-Hale")
-    )?;
+    let dt_rate = deuterium_fraction * tritium_fraction * dt_reactivity;
+    let dd_rate_1 = 0.5 * deuterium_fraction.powi(2) * dd_reactivity_1;
+    let dd_rate_2 = 0.5 * deuterium_fraction.powi(2) * dd_reactivity_2;
 
-    let dd_reactivity_2 = reactivity(
-        ion_temperature_kev,
-        Some("keV"),
-        Some("m^3/s"),
-        Some("D+D=p+T"),
-        Some(equation_str)
-        // Some("Bosch-Hale")
-    )?;
+    let total_rate = dt_rate + dd_rate_1 + dd_rate_2;
 
-    let total_reactivity = dt_reactivity * dt_fraction + dd_reactivity_1 * dd_fraction + dd_reactivity_2 * dd_fraction;
-    let dt_normalized = dt_reactivity * dt_fraction / total_reactivity;
-    let dd1_normalized = dd_reactivity_1 * dd_fraction / total_reactivity;
-    let dd2_normalized = dd_reactivity_2 * dd_fraction / total_reactivity;
-
-    Ok(vec![dt_normalized, dd1_normalized, dd2_normalized])
+    Ok(vec![dt_rate / total_rate, dd_rate_1 / total_rate, dd_rate_2 / total_rate])
 
 }
 

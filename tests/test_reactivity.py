@@ -41,7 +41,11 @@ def test_sadler_van_belle_close_to_bosch_hale():
 
 
 def test_relative_reaction_rates_ratio():
-    dt, dd_n, dd_p = relative_reaction_rates(10, "keV", dt_fraction=0.5, dd_fraction=0.5)
+    # rate_ij = f_i * f_j * <sigma v>_ij / (1 + delta_ij), so for a 50:50 fuel
+    # each DD branch over DT is 0.5 * <sigma v>_DD / <sigma v>_DT
+    dt, dd_n, dd_p = relative_reaction_rates(
+        10, "keV", deuterium_fraction=0.5, tritium_fraction=0.5
+    )
     assert dt + dd_n + dd_p == approx(1.0)
-    assert dd_n / dt == approx(6.023e-19 / 1.136e-16, rel=1e-3, abs=0)
-    assert dd_p / dt == approx(5.781e-19 / 1.136e-16, rel=1e-3, abs=0)
+    assert dd_n / dt == approx(0.5 * 6.023e-19 / 1.136e-16, rel=1e-3, abs=0)
+    assert dd_p / dt == approx(0.5 * 5.781e-19 / 1.136e-16, rel=1e-3, abs=0)
