@@ -102,15 +102,13 @@ fn reactivity(
         };
 
         let sigma_thermal_reactivity =  bosch_and_hale_equations(c1, c2, c3, c4, c5, c6, c7, gamov, mrc2, ion_temperature_kev)?;
-        let scaling_factor = scale_reactivity_units(sigma_thermal_reactivity, reactivity_units);
-        Ok(sigma_thermal_reactivity*scaling_factor)
+        Ok(scale_reactivity_units(sigma_thermal_reactivity, reactivity_units))
     }else if equation_str == "Sadler-Van Belle"{
         if reaction != "D+T=n+a" {
             return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Only 'D+T=n+a' reaction is supported for 'Sadler-Van Belle' equation"));
         }
         let sigma_thermal_reactivity = sadler_van_belle(ion_temperature_kev)?;
-        let scaling_factor = scale_reactivity_units(sigma_thermal_reactivity, reactivity_units);
-        Ok(sigma_thermal_reactivity*scaling_factor)
+        Ok(scale_reactivity_units(sigma_thermal_reactivity, reactivity_units))
     }else{
         panic!("Only 'Bosch-Hale' and 'Sadler-Van Belle' equations are supported");
     };
@@ -224,7 +222,8 @@ fn sadler_van_belle(ion_temperature: f64) -> Result<f64, PyErr> {
         * ((-c[1] * (u / ion_temperature).powf(1.0 / 3.0)).exp())
         / (u.powf(5.0 / 6.0) * ion_temperature.powf(2.0 / 3.0));
 
-    Ok(val)
+    // the fit gives m^3/s, converting to cm^3/s
+    Ok(val * 1.0e6)
 }
 
 fn bosch_and_hale_equations(c1: f64, c2: f64, c3: f64, c4: f64, c5: f64, c6: f64, c7: f64, gamov: f64, mrc2: f64, ion_temperature_kev: f64) -> Result<f64, PyErr> {
@@ -234,10 +233,10 @@ fn bosch_and_hale_equations(c1: f64, c2: f64, c3: f64, c4: f64, c5: f64, c6: f64
     // Equation 14
     let xi: f64 = (gamov.powi(2) / (4.0 * theta)).powf(1.0 / 3.0);
 
-    // Equation 12
+    // Equation 12, gives cm^3/s
     let sigma_thermal_reactivity: f64 = c1 * theta * (xi / (mrc2 * ion_temperature_kev.powi(3))).sqrt() * (-3.0 * xi).exp();
 
-    Ok(sigma_thermal_reactivity * 1.0e-6)
+    Ok(sigma_thermal_reactivity)
 }
 
 fn scale_reactivity_units(sigma_thermal_reactivity: f64, reactivity_units: Option<&str>) -> f64 {
