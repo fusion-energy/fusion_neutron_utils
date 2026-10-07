@@ -1,5 +1,7 @@
 use pyo3::prelude::*;
 
+mod tt_data;
+
 #[pyfunction(signature = (ion_temperature, temperature_units=None, neutron_energy_units=None, reaction=None))]
 /// Calculate the average neutron energy for a given ion temperature and reaction.
 #[pyo3(text_signature = "(ion_temperature, temperature_units='eV', neutron_energy_units='eV', reaction='D+T=n+a')")]
@@ -50,11 +52,12 @@ fn neutron_energy_mean_and_std_dev(
 
 
 #[pyfunction(signature = (ion_temperature, temperature_units=None, reactivity_units=None, reaction=None, equation=None))]
-/// Bosch-Hale parametrization of D+T thermal reactivity, assuming a Maxwellian ion
-/// temperature distribution. If ion_temperature_kev is given in keV, the returned
-/// <sigma v> is in m^3/s. This is valid for 0.2 keV <= ion_temperature_kev <= 100 keV.
+/// Thermal reactivity <sigma v> assuming a Maxwellian ion temperature distribution.
 ///
-/// D + T -> T(3.56 MeV) + n(14.03 MeV)
+/// D+T=n+a, D+D=n+He3 and D+D=p+T use the Bosch-Hale parametrization (valid for
+/// 0.2 keV to 100 keV), D+T=n+a can also use Sadler-Van Belle. T+T=2n+a uses
+/// the tabulated reactivity from Hale (0.1 keV to 1000 keV, interpolated
+/// log-log), taken from NeSST.
 ///
 /// Args:
 ///     ion_temperature_kev (float): Ion temperature.
@@ -86,6 +89,13 @@ fn reactivity(
 
     let ion_temperature_kev: f64 = scale_temperature_units_to_kev(ion_temperature, temperature_units)?;
 
+    if reaction == "T+T=2n+a" {
+        if !matches!(equation, None | Some("Hale")) {
+            return Err(value_error("Only the 'Hale' equation is supported for the 'T+T=2n+a' reaction"));
+        }
+        return scale_reactivity_units(tt_reactivity(ion_temperature_kev)?, reactivity_units);
+    }
+
     let sigma_thermal_reactivity_scaled = if equation_str == "Bosch-Hale"{
         let (c1, c2, c3, c4, c5, c6, c7, gamov, mrc2) = if reaction == "D+T=n+a" {
             (
@@ -103,7 +113,7 @@ fn reactivity(
                 31.3970, 937_814.0,
             )
         } else {
-            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Only 'D+T=n+a', 'D+D=p+T', and 'D+D=n+He3' reactions are supported"));
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Only 'D+T=n+a', 'D+D=p+T', 'D+D=n+He3' and 'T+T=2n+a' reactions are supported"));
         };
 
         let sigma_thermal_reactivity =  bosch_and_hale_equations(c1, c2, c3, c4, c5, c6, c7, gamov, mrc2, ion_temperature_kev)?;
@@ -128,8 +138,8 @@ fn reactivity(
 ///
 /// The reaction rate per unit volume between ion species i and j is
 /// n_i * n_j * <sigma v>_ij / (1 + delta_ij), so for fuel ion fractions f_D
-/// and f_T the DT rate is proportional to f_D * f_T * <sigma v>_DT and each
-/// DD branch to f_D^2 / 2 * <sigma v>_DD.
+/// and f_T the DT rate is proportional to f_D * f_T * <sigma v>_DT, each
+/// DD branch to f_D^2 / 2 * <sigma v>_DD and TT to f_T^2 / 2 * <sigma v>_TT.
 ///
 /// Parameters
 /// ----------
@@ -149,15 +159,15 @@ fn reactivity(
 /// Returns
 /// -------
 /// List[float]
-///     The fractions of all reactions that are DT, DD (n+He3) and DD (p+T), in that order.
+///     The fractions of all reactions that are DT, DD (n+He3), DD (p+T) and TT, in that order.
 ///
 /// Examples
 /// --------
 /// >>> relative_reaction_rates(10e3)
-/// [dt_rate, dd_n_rate, dd_p_rate]
+/// [dt_rate, dd_n_rate, dd_p_rate, tt_rate]
 ///
 /// >>> relative_reaction_rates(10.0, temperature_units='keV', deuterium_fraction=0.9, tritium_fraction=0.1)
-/// [dt_rate, dd_n_rate, dd_p_rate]
+/// [dt_rate, dd_n_rate, dd_p_rate, tt_rate]
 fn relative_reaction_rates(
     ion_temperature: f64,
     temperature_units: Option<&str>,
@@ -181,21 +191,20 @@ fn relative_reaction_rates(
     if !(total_fraction > 1. - tol && total_fraction < 1. + tol) {
         return Err(value_error("The deuterium_fraction + tritium_fraction do not sum to 1.0 and are not within a small tolerance (+/-0.000001)"));
     }
-    if deuterium_fraction == 0.0 {
-        return Err(value_error("deuterium_fraction must be above 0, without deuterium there are no D+T or D+D reactions"));
-    }
 
     let dt_reactivity = reactivity(ion_temperature_kev, Some("keV"), Some("m^3/s"), Some("D+T=n+a"), Some(equation_str))?;
     let dd_reactivity_1 = reactivity(ion_temperature_kev, Some("keV"), Some("m^3/s"), Some("D+D=n+He3"), Some("Bosch-Hale"))?;
     let dd_reactivity_2 = reactivity(ion_temperature_kev, Some("keV"), Some("m^3/s"), Some("D+D=p+T"), Some("Bosch-Hale"))?;
+    let tt_reactivity = reactivity(ion_temperature_kev, Some("keV"), Some("m^3/s"), Some("T+T=2n+a"), None)?;
 
     let dt_rate = deuterium_fraction * tritium_fraction * dt_reactivity;
     let dd_rate_1 = 0.5 * deuterium_fraction.powi(2) * dd_reactivity_1;
     let dd_rate_2 = 0.5 * deuterium_fraction.powi(2) * dd_reactivity_2;
+    let tt_rate = 0.5 * tritium_fraction.powi(2) * tt_reactivity;
 
-    let total_rate = dt_rate + dd_rate_1 + dd_rate_2;
+    let total_rate = dt_rate + dd_rate_1 + dd_rate_2 + tt_rate;
 
-    Ok(vec![dt_rate / total_rate, dd_rate_1 / total_rate, dd_rate_2 / total_rate])
+    Ok(vec![dt_rate / total_rate, dd_rate_1 / total_rate, dd_rate_2 / total_rate, tt_rate / total_rate])
 
 }
 
@@ -222,6 +231,23 @@ fn sadler_van_belle(ion_temperature: f64) -> Result<f64, PyErr> {
     Ok(val * 1.0e6)
 }
 
+/// T+T thermal reactivity in cm^3/s, log-log interpolation of the Hale table.
+fn tt_reactivity(ion_temperature_kev: f64) -> PyResult<f64> {
+    let temperatures = &tt_data::TT_REACTIVITY_TEMPERATURE_KEV;
+    let values = &tt_data::TT_REACTIVITY_CM3_PER_S;
+    let (t_min, t_max) = (temperatures[0], temperatures[temperatures.len() - 1]);
+    if !(t_min..=t_max).contains(&ion_temperature_kev) {
+        return Err(value_error(&format!(
+            "The T+T reactivity is tabulated from {t_min} keV to {t_max} keV, not {ion_temperature_kev} keV"
+        )));
+    }
+    let i = temperatures.partition_point(|&t| t <= ion_temperature_kev).clamp(1, temperatures.len() - 1);
+    let (t0, t1) = (temperatures[i - 1], temperatures[i]);
+    let (v0, v1) = (values[i - 1], values[i]);
+    let fraction = (ion_temperature_kev / t0).ln() / (t1 / t0).ln();
+    Ok(v0 * (v1 / v0).powf(fraction))
+}
+
 fn bosch_and_hale_equations(c1: f64, c2: f64, c3: f64, c4: f64, c5: f64, c6: f64, c7: f64, gamov: f64, mrc2: f64, ion_temperature_kev: f64) -> Result<f64, PyErr> {
     // Equation 13
     let theta: f64 = ion_temperature_kev * (1.0 - (ion_temperature_kev * (c2 + ion_temperature_kev * (c4 + ion_temperature_kev * c6))) / (1.0 + ion_temperature_kev * (c3 + ion_temperature_kev * (c5 + ion_temperature_kev * c7)))) .powi(-1);
@@ -233,6 +259,95 @@ fn bosch_and_hale_equations(c1: f64, c2: f64, c3: f64, c4: f64, c5: f64, c6: f64
     let sigma_thermal_reactivity: f64 = c1 * theta * (xi / (mrc2 * ion_temperature_kev.powi(3))).sqrt() * (-3.0 * xi).exp();
 
     Ok(sigma_thermal_reactivity)
+}
+
+// Triton to neutron mass ratio, CODATA 2018 mass energy equivalents
+const TRITON_NEUTRON_MASS_RATIO: f64 = 2808.92113668 / 939.56542194;
+
+#[pyfunction(signature = (energies, ion_temperature, temperature_units=None, neutron_energy_units=None, reaction=None))]
+#[pyo3(text_signature = "(energies, ion_temperature, temperature_units='eV', neutron_energy_units='eV', reaction='T+T=2n+a')")]
+/// Neutron energy spectrum dN/dE for the T+T=2n+a reaction.
+///
+/// The T+T reaction has three bodies in the final state, so the neutron
+/// spectrum is a continuum rather than a peak. The centre of mass spectrum
+/// (Brune fit, from NeSST) is broadened for the ion temperature following
+/// Appelbe et al., High Energy Density Physics 2016, as done in NeSST's
+/// dNdE_TT. For D+T and D+D use neutron_energy_mean_and_std_dev.
+///
+/// Parameters
+/// ----------
+/// energies : list of float
+///     Neutron energies at which to evaluate the spectrum.
+/// ion_temperature : float
+///     The ion temperature.
+/// temperature_units : str, optional
+///     The units of the ion temperature. Default is 'eV'.
+/// neutron_energy_units : str, optional
+///     The units of the energies. Default is 'eV'.
+/// reaction : str, optional
+///     Only 'T+T=2n+a' is supported. Default is 'T+T=2n+a'.
+///
+/// Returns
+/// -------
+/// List[float]
+///     dN/dE at each energy, normalised to integrate to 1 over energy in
+///     neutron_energy_units.
+fn neutron_energy_spectrum(
+    energies: Vec<f64>,
+    ion_temperature: f64,
+    temperature_units: Option<&str>,
+    neutron_energy_units: Option<&str>,
+    reaction: Option<&str>,
+) -> PyResult<Vec<f64>> {
+    if reaction.unwrap_or("T+T=2n+a") != "T+T=2n+a" {
+        return Err(value_error("Only the 'T+T=2n+a' reaction is supported, use neutron_energy_mean_and_std_dev for 'D+T=n+a' and 'D+D=n+He3'"));
+    }
+    let ion_temperature_ev = scale_temperature_units_to_kev(ion_temperature, temperature_units)? * 1e3;
+    if ion_temperature_ev <= 0.0 {
+        return Err(value_error("Ion temperature must be positive and non-zero"));
+    }
+    // energy of one neutron_energy_unit in eV
+    let unit_in_ev = scale_energy_in_kev_to_requested_units(1.0, Some("eV"))? / scale_energy_in_kev_to_requested_units(1.0, neutron_energy_units)?;
+    if energies.iter().any(|&e| !(e >= 0.0)) {
+        return Err(value_error("Neutron energies must be non-negative"));
+    }
+
+    // The tabulated centre of mass spectrum is linearly interpolated onto a
+    // finer grid, as the 37 keV data spacing is too coarse for the narrow
+    // broadening kernel at low ion temperatures. Integrals use the trapezium
+    // rule. The E = 0 point is skipped as the kernel has a 1 / sqrt(E) factor
+    // and the spectrum is zero there.
+    const REFINE: usize = 16;
+    let com_data = &tt_data::TT_COM_SPECTRUM;
+    let d_energy = (tt_data::TT_COM_SPECTRUM_ENERGY_MEV[1] - tt_data::TT_COM_SPECTRUM_ENERGY_MEV[0]) * 1e6 / REFINE as f64;
+    let n_fine = (com_data.len() - 1) * REFINE + 1;
+    let mut com_sqrt_energies = Vec::with_capacity(n_fine - 1);
+    let mut com_weights = Vec::with_capacity(n_fine - 1);
+    for k in 1..n_fine {
+        let (i, step) = (k / REFINE, (k % REFINE) as f64 / REFINE as f64);
+        let value = if step == 0.0 { com_data[i] } else { com_data[i] + step * (com_data[i + 1] - com_data[i]) };
+        let trapezium = if k == n_fine - 1 { 0.5 } else { 1.0 };
+        com_sqrt_energies.push((k as f64 * d_energy).sqrt());
+        com_weights.push(value * trapezium * d_energy);
+    }
+    let integral: f64 = com_weights.iter().sum();
+
+    // Appelbe et al. HEDP 2016, as implemented in NeSST TT_spectrum_model.spec
+    let a = 2.0 * TRITON_NEUTRON_MASS_RATIO / ion_temperature_ev;
+    let norm = 0.5 * (a / std::f64::consts::PI).sqrt() / integral;
+
+    Ok(energies
+        .iter()
+        .map(|&e| {
+            let sqrt_e = (e * unit_in_ev).sqrt();
+            let per_ev: f64 = com_sqrt_energies
+                .iter()
+                .zip(com_weights.iter())
+                .map(|(&sqrt_e_com, &w)| (-a * (sqrt_e - sqrt_e_com).powi(2)).exp() / sqrt_e_com * w)
+                .sum();
+            norm * per_ev * unit_in_ev
+        })
+        .collect())
 }
 
 fn value_error(message: &str) -> PyErr {
@@ -274,6 +389,7 @@ fn fusion_neutron_utils(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(reactivity, m)?)?;
     m.add_function(wrap_pyfunction!(relative_reaction_rates, m)?)?;
     m.add_function(wrap_pyfunction!(neutron_energy_mean_and_std_dev, m)?)?;
+    m.add_function(wrap_pyfunction!(neutron_energy_spectrum, m)?)?;
     Ok(())
 }
 
