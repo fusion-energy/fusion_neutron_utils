@@ -1,5 +1,6 @@
-from fusion_neutron_utils import reactivity, relative_reaction_rates
 from pytest import approx, mark
+
+from fusion_neutron_utils import reactivity, relative_reaction_rates
 
 # Bosch and Hale, Nucl. Fusion 32 (1992) 611, Table VIII, in cm^3/s.
 # The same values are given by NeSST (reac_DT and reac_DD).

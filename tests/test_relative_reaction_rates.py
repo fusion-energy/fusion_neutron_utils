@@ -1,5 +1,7 @@
 import pytest
+
 from fusion_neutron_utils import relative_reaction_rates
+
 
 def test_relative_reaction_rates_default_fractions():
     result = relative_reaction_rates(ion_temperature=10e3)

@@ -324,7 +324,8 @@ fn neutron_energy_spectrum(
 }
 
 /// TT neutron spectrum dN/dE in 1/eV at energies in eV, normalised to 1.
-fn tt_spectrum_per_ev(energies_ev: &[f64], ion_temperature_ev: f64) -> Vec<f64> {
+#[doc(hidden)]
+pub fn tt_spectrum_per_ev(energies_ev: &[f64], ion_temperature_ev: f64) -> Vec<f64> {
     // Appelbe et al. HEDP 2016, as implemented in NeSST TT_spectrum_model.spec.
     // The kernel exp(-a (sqrt(E) - sqrt(E'))^2) is a Gaussian in sqrt(E) with
     // standard deviation 1 / sqrt(2 a).
@@ -616,7 +617,8 @@ fn scale_reactivity_units(sigma_thermal_reactivity: f64, reactivity_units: Optio
     }
 }
 
-fn scale_temperature_units_to_kev(ion_temperature: f64, temperature_units: Option<&str>) -> PyResult<f64> {
+#[doc(hidden)]
+pub fn scale_temperature_units_to_kev(ion_temperature: f64, temperature_units: Option<&str>) -> PyResult<f64> {
     match temperature_units.unwrap_or("eV") {
         "keV" => Ok(ion_temperature),
         "eV" => Ok(ion_temperature * 1e-3),
@@ -659,6 +661,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(non_snake_case)]
     fn test_scale_temperature_units_to_kev_eV() {
         let ion_temperature = 1000.0; // 1000 eV
         let temperature_units = Some("eV");
@@ -667,6 +670,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(non_snake_case)]
     fn test_scale_temperature_units_to_kev_keV() {
         let ion_temperature = 1.0; // 1 keV
         let temperature_units = Some("keV");
@@ -675,6 +679,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(non_snake_case)]
     fn test_scale_temperature_units_to_kev_MeV() {
         let ion_temperature = 0.001; // 1 MeV
         let temperature_units = Some("MeV");
@@ -683,6 +688,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(non_snake_case)]
     fn test_scale_temperature_units_to_kev_GeV() {
         let ion_temperature = 0.000001; // 1 GeV
         let temperature_units = Some("GeV");

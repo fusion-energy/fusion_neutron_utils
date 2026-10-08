@@ -1,9 +1,10 @@
+from pytest import raises
+
 from fusion_neutron_utils import (
     neutron_energy_mean_and_std_dev,
     reactivity,
     relative_reaction_rates,
 )
-from pytest import raises
 
 
 def test_reactivity_invalid_temperature_units():

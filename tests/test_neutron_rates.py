@@ -1,4 +1,6 @@
 import numpy as np
+from pytest import approx, raises
+
 from fusion_neutron_utils import (
     fusion_energy_per_reaction,
     mean_neutron_energy,
@@ -9,7 +11,6 @@ from fusion_neutron_utils import (
     relative_neutron_rates,
     relative_reaction_rates,
 )
-from pytest import approx, raises
 
 REACTIONS = ["D+T=n+a", "D+D=n+He3", "D+D=p+T", "T+T=2n+a"]
 MEV_IN_JOULES = 1.602176634e-13

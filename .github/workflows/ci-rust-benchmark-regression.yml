@@ -1,0 +1,33 @@
+name: Rust benchmark regression
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  benchmark-regression:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout main for baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: baseline
+
+      - name: Set up Rust
+        run: rustup update stable && rustup default stable
+
+      - name: Benchmark main baseline
+        working-directory: baseline
+        run: cargo bench --bench benchmark -- --sample-size 10 --save-baseline main
+
+      - name: Copy baseline data into current workspace
+        run: |
+          mkdir -p target
+          cp -R baseline/target/criterion target/
+
+      - name: Benchmark current branch against main baseline
+        run: cargo bench --bench benchmark -- --sample-size 10 --load-baseline main

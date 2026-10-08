@@ -1,6 +1,11 @@
 import numpy as np
-from fusion_neutron_utils import neutron_energy_spectrum, reactivity, relative_reaction_rates
 from pytest import approx, raises
+
+from fusion_neutron_utils import (
+    neutron_energy_spectrum,
+    reactivity,
+    relative_reaction_rates,
+)
 
 # Hale T+T reactivity in m^3/s at tabulated temperatures, as given by NeSST reac_TT
 hale_table = {1: 1.8436e-29, 10: 4.0283e-25, 100: 1.9340e-23}
