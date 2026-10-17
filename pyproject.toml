@@ -12,11 +12,13 @@ classifiers = [
 ]
 dynamic = ["version"]
 [tool.maturin]
+module-name = "fusion_neutron_utils.fusion_neutron_utils"
+python-source = "."
 features = ["pyo3/extension-module"]
 include = [
     "fusion_neutron_utils/__init__.py",
     "fusion_neutron_utils/__init__.pyi",
-    "fusion_neutron_utils/fusion_neutron_utils.pyi",
+    "fusion_neutron_utils/fusion_neutron_utils/__init__.pyi",
     "fusion_neutron_utils/py.typed",
 ]
 

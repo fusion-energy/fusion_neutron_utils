@@ -1,7 +1,9 @@
+use pyo3_stub_gen::derive::gen_stub_pyfunction;
 use pyo3::prelude::*;
 
 mod tt_data;
 
+#[gen_stub_pyfunction(module = "fusion_neutron_utils.fusion_neutron_utils")]
 #[pyfunction(signature = (ion_temperature, temperature_units=None, neutron_energy_units=None, reaction=None))]
 /// Calculate the average neutron energy for a given ion temperature and reaction.
 #[pyo3(text_signature = "(ion_temperature, temperature_units='eV', neutron_energy_units='eV', reaction='D+T=n+a')")]
@@ -51,6 +53,7 @@ fn neutron_energy_mean_and_std_dev(
 
 
 
+#[gen_stub_pyfunction(module = "fusion_neutron_utils.fusion_neutron_utils")]
 #[pyfunction(signature = (ion_temperature, temperature_units=None, reactivity_units=None, reaction=None, equation=None))]
 /// Thermal reactivity <sigma v> assuming a Maxwellian ion temperature distribution.
 ///
@@ -59,12 +62,24 @@ fn neutron_energy_mean_and_std_dev(
 /// the tabulated reactivity from Hale (0.1 keV to 1000 keV, interpolated
 /// log-log), taken from NeSST.
 ///
-/// Args:
-///     ion_temperature_kev (float): Ion temperature.
-///     temperature_units
+/// Parameters
+/// ----------
+/// ion_temperature : float
+///     The ion temperature.
+/// temperature_units : str, optional
+///     The units of the ion temperature. Default is 'eV'.
+/// reactivity_units : str, optional
+///     The units of the returned reactivity. Default is 'm^3/s'.
+/// reaction : str, optional
+///     One of 'D+T=n+a', 'D+D=n+He3', 'D+D=p+T' or 'T+T=2n+a'. Default is 'D+T=n+a'.
+/// equation : str, optional
+///     The equation used for the D+T reactivity, 'Bosch-Hale' or
+///     'Sadler-Van Belle'. Default is 'Bosch-Hale'.
 ///
-/// Returns:
-///     float: The thermal reactivity in m^3/s.
+/// Returns
+/// -------
+/// float
+///     The thermal reactivity.
 ///
 /// Source:
 /// Sec. 5.2, Eqn. (12) - (14), Table VII in
@@ -132,6 +147,7 @@ fn reactivity(
 }
 
 
+#[gen_stub_pyfunction(module = "fusion_neutron_utils.fusion_neutron_utils")]
 #[pyfunction(signature = (ion_temperature, temperature_units=None, deuterium_fraction=None, tritium_fraction=None, equation=None))]
 #[pyo3(text_signature = "(ion_temperature, temperature_units='eV', deuterium_fraction=0.5, tritium_fraction=0.5, equation='Bosch-Hale')")]
 /// Calculate the relative reaction rates for given ion temperature and fuel composition.
@@ -272,6 +288,7 @@ fn bosch_and_hale_equations(c1: f64, c2: f64, c3: f64, c4: f64, c5: f64, c6: f64
 // Triton to neutron mass ratio, CODATA 2018 mass energy equivalents
 const TRITON_NEUTRON_MASS_RATIO: f64 = 2808.92113668 / 939.56542194;
 
+#[gen_stub_pyfunction(module = "fusion_neutron_utils.fusion_neutron_utils")]
 #[pyfunction(signature = (energies, ion_temperature, temperature_units=None, neutron_energy_units=None, reaction=None))]
 #[pyo3(text_signature = "(energies, ion_temperature, temperature_units='eV', neutron_energy_units='eV', reaction='T+T=2n+a')")]
 /// Neutron energy spectrum dN/dE for the T+T=2n+a reaction.
@@ -421,6 +438,7 @@ fn reaction_index(reaction: &str) -> PyResult<usize> {
         .ok_or_else(|| value_error("reaction must be one of 'D+T=n+a', 'D+D=n+He3', 'D+D=p+T' or 'T+T=2n+a'"))
 }
 
+#[gen_stub_pyfunction(module = "fusion_neutron_utils.fusion_neutron_utils")]
 #[pyfunction(signature = (reaction, energy_units=None))]
 #[pyo3(text_signature = "(reaction, energy_units='eV')")]
 /// Energy released per fusion reaction (the Q-value), from the AME2020 atomic
@@ -441,6 +459,7 @@ fn fusion_energy_per_reaction(reaction: &str, energy_units: Option<&str>) -> PyR
     scale_energy_in_kev_to_requested_units(REACTIONS[reaction_index(reaction)?].1, energy_units)
 }
 
+#[gen_stub_pyfunction(module = "fusion_neutron_utils.fusion_neutron_utils")]
 #[pyfunction]
 #[pyo3(text_signature = "(reaction)")]
 /// Number of neutrons emitted per fusion reaction.
@@ -469,6 +488,7 @@ fn neutron_fractions(reaction_fractions: &[f64; 4]) -> [f64; 4] {
     [per_reaction[0] / total, per_reaction[1] / total, per_reaction[2] / total, per_reaction[3] / total]
 }
 
+#[gen_stub_pyfunction(module = "fusion_neutron_utils.fusion_neutron_utils")]
 #[pyfunction(signature = (ion_temperature, temperature_units=None, deuterium_fraction=None, tritium_fraction=None, equation=None))]
 #[pyo3(text_signature = "(ion_temperature, temperature_units='eV', deuterium_fraction=0.5, tritium_fraction=0.5, equation='Bosch-Hale')")]
 /// Fractions of all neutrons emitted by each reaction, for a given ion
@@ -507,6 +527,7 @@ fn relative_neutron_rates(
     Ok(neutron_fractions(&fractions).to_vec())
 }
 
+#[gen_stub_pyfunction(module = "fusion_neutron_utils.fusion_neutron_utils")]
 #[pyfunction(signature = (fusion_power, ion_temperature, temperature_units=None, deuterium_fraction=None, tritium_fraction=None, equation=None))]
 #[pyo3(text_signature = "(fusion_power, ion_temperature, temperature_units='eV', deuterium_fraction=0.5, tritium_fraction=0.5, equation='Bosch-Hale')")]
 /// Neutron emission rate for a given fusion power, ion temperature and fuel
@@ -559,6 +580,7 @@ fn neutron_rate_from_fusion_power(
     Ok(fusion_power / energy_per_reaction_joules * neutrons_per_reaction)
 }
 
+#[gen_stub_pyfunction(module = "fusion_neutron_utils.fusion_neutron_utils")]
 #[pyfunction(signature = (ion_temperature, temperature_units=None, neutron_energy_units=None, deuterium_fraction=None, tritium_fraction=None, equation=None))]
 #[pyo3(text_signature = "(ion_temperature, temperature_units='eV', neutron_energy_units='eV', deuterium_fraction=0.5, tritium_fraction=0.5, equation='Bosch-Hale')")]
 /// Mean energy of the emitted neutrons for a given ion temperature and fuel
@@ -769,3 +791,4 @@ mod tests3 {
         assert!(scale_reactivity_units(sigma_thermal_reactivity, reactivity_units).is_err());
     }
 }
+pyo3_stub_gen::define_stub_info_gatherer!(stub_info);
