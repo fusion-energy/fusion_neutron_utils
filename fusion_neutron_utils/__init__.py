@@ -1,3 +1,4 @@
+from . import fusion_neutron_utils
 from .fusion_neutron_utils import *
 
 __doc__ = fusion_neutron_utils.__doc__
