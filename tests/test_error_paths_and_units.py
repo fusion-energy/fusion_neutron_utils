@@ -266,7 +266,7 @@ def test_tt_spectrum_preserves_input_order():
 
 
 def test_tt_spectrum_is_non_negative_and_zero_above_kinematic_limit():
-    energies = [0.5 * i for i in range(0, 21)]  # 0 to 10 MeV
+    energies = [0.5 * i for i in range(21)]  # 0 to 10 MeV
     assert all(s >= 0.0 for s in neutron_energy_spectrum(energies, 10, "keV", "MeV"))
     # the center of mass spectrum ends at 9.4 MeV, far above that at 10 keV
     assert neutron_energy_spectrum([20.0], 10, "keV", "MeV") == [0.0]
