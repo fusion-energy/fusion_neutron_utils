@@ -30,4 +30,4 @@ jobs:
           cp -R baseline/target/criterion target/
 
       - name: Benchmark current branch against main baseline
-        run: cargo bench --bench benchmark -- --sample-size 10 --load-baseline main
+        run: cargo bench --bench benchmark -- --sample-size 10 --baseline main
