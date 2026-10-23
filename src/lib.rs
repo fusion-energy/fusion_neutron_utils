@@ -318,6 +318,7 @@ const TRITON_NEUTRON_MASS_RATIO: f64 = 2808.92113668 / 939.56542194;
 ///     dN/dE at each energy, normalised to integrate to 1 over energy in
 ///     neutron_energy_units.
 fn neutron_energy_spectrum(
+    #[gen_stub(override_type(type_repr = "collections.abc.Sequence[float] | numpy.typing.NDArray[numpy.floating | numpy.integer]", imports = ("collections.abc", "numpy", "numpy.typing")))]
     energies: Vec<f64>,
     ion_temperature: f64,
     temperature_units: Option<&str>,

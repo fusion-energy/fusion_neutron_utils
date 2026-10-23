@@ -26,5 +26,5 @@ jobs:
 
       - name: Fail if the committed stub is outdated
         run: |
-          git add -N fusion_neutron_utils
-          git diff --exit-code fusion_neutron_utils
+          git add -N python
+          git diff --exit-code python

@@ -13,7 +13,7 @@ classifiers = [
 dynamic = ["version"]
 [tool.maturin]
 module-name = "fusion_neutron_utils.fusion_neutron_utils"
-python-source = "."
+python-source = "python"
 features = ["pyo3/extension-module"]
 
 [project.optional-dependencies]
@@ -21,3 +21,6 @@ tests = ["pytest", "numpy"]
 lint = ["ruff"]
 types = ["mypy"]
 
+
+[tool.ruff]
+src = ["python"]

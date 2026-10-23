@@ -2,6 +2,9 @@
 # ruff: noqa: E501, F401, F403, F405
 
 import builtins
+import collections.abc
+import numpy
+import numpy.typing
 import typing
 __all__ = [
     "fusion_energy_per_reaction",
@@ -68,7 +71,7 @@ def neutron_energy_mean_and_std_dev(ion_temperature: builtins.float, temperature
     Calculate the average neutron energy for a given ion temperature and reaction.
     """
 
-def neutron_energy_spectrum(energies: typing.Sequence[builtins.float], ion_temperature: builtins.float, temperature_units: typing.Optional[builtins.str] = None, neutron_energy_units: typing.Optional[builtins.str] = None, reaction: typing.Optional[builtins.str] = None) -> builtins.list[builtins.float]:
+def neutron_energy_spectrum(energies: collections.abc.Sequence[float] | numpy.typing.NDArray[numpy.floating | numpy.integer], ion_temperature: builtins.float, temperature_units: typing.Optional[builtins.str] = None, neutron_energy_units: typing.Optional[builtins.str] = None, reaction: typing.Optional[builtins.str] = None) -> builtins.list[builtins.float]:
     r"""
     Neutron energy spectrum dN/dE for the T+T=2n+a reaction.
     
