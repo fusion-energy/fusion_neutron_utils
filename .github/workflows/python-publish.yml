@@ -30,6 +30,9 @@ jobs:
         platform:
           - runner: ubuntu-latest
             target: x86_64
+          # i686 builds in a CentOS 7 container that cannot resolve vault.centos.org on ubuntu-26.04
+          - runner: ubuntu-24.04
+            target: x86
           - runner: ubuntu-latest
             target: aarch64
           - runner: ubuntu-latest
