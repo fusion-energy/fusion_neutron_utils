@@ -1,0 +1,28 @@
+name: Rust benchmark
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        run: rustup update stable && rustup default stable
+
+      - name: Run benchmarks
+        run: cargo bench --bench benchmark -- --sample-size 10
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion
+          path: target/criterion

@@ -1,6 +1,11 @@
 import numpy as np
-from fusion_neutron_utils import neutron_energy_spectrum, reactivity, relative_reaction_rates
 from pytest import approx, raises
+
+from fusion_neutron_utils import (
+    neutron_energy_spectrum,
+    reactivity,
+    relative_reaction_rates,
+)
 
 # Hale T+T reactivity in m^3/s at tabulated temperatures, as given by NeSST reac_TT
 hale_table = {1: 1.8436e-29, 10: 4.0283e-25, 100: 1.9340e-23}
@@ -66,3 +71,10 @@ def test_tt_relative_reaction_rate():
     dt, _, _, tt = relative_reaction_rates(10, "keV", deuterium_fraction=0.5, tritium_fraction=0.5)
     expected = 0.5 * reactivity(10, "keV", "m^3/s", "T+T=2n+a") / reactivity(10, "keV", "m^3/s", "D+T=n+a")
     assert tt / dt == approx(expected, rel=1e-9, abs=0)
+
+
+def test_tt_spectrum_accepts_numpy_array():
+    energies = np.linspace(1e6, 5e6, 5)
+    from_array = neutron_energy_spectrum(energies, 10e3)
+    from_list = neutron_energy_spectrum(list(energies), 10e3)
+    assert from_array == approx(from_list, rel=1e-12, abs=0)

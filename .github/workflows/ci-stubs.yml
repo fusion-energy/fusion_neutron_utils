@@ -1,0 +1,30 @@
+name: Stub check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  stub-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Rust
+        run: rustup update stable && rustup default stable
+
+      - name: Regenerate stub
+        run: cargo run --bin stub_gen
+
+      - name: Fail if the committed stub is outdated
+        run: |
+          git add -N python
+          git diff --exit-code python
